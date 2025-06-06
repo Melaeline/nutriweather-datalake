@@ -1,36 +1,96 @@
 # Nutriweather Datalake
 
-A containerized data lake solution built with Apache Airflow and Apache Spark for processing nutritional and weather data. This project demonstrates modern data engineering practices using TheMealDB API as a data source, with plans to integrate weather data for comprehensive food production and agricultural analysis.
+A modern containerized data lake solution that combines nutritional and weather data processing using Apache Airflow and Apache Spark. This project demonstrates enterprise-grade data engineering practices with automated ETL pipelines, processing data from TheMealDB API and Open-Meteo weather API to enable comprehensive food production and agricultural analysis.
 
-## Architecture Overview
+## 🏗️ Architecture Overview
 
-The project uses a microservices architecture with the following components:
+The project implements a microservices architecture with the following technology stack:
 
-- **Apache Airflow**: Orchestrates data pipelines and workflow management
-- **Apache Spark**: Distributed data processing and transformation
-- **Docker Compose**: Container orchestration for development environment
-- **Python**: Data processing scripts and pipeline logic
+### Core Technologies
+- **Apache Airflow 2.8+**: Workflow orchestration and pipeline management
+- **Apache Spark 3.5.6**: Distributed data processing and transformation  
+- **Python 3.12**: Data processing scripts and pipeline logic
+- **Docker & Docker Compose**: Container orchestration for development
+- **Astronomer CLI**: Development and deployment tooling
 
-## Data Pipeline
+### Data Technologies
+- **Pandas**: Data manipulation and analysis
+- **PyArrow**: Columnar data processing and Parquet format support
+- **PySpark**: Large-scale data processing with Spark SQL
+- **Parquet**: Optimized columnar storage format for analytics
+
+### APIs & Data Sources
+- **TheMealDB API**: Comprehensive meal and recipe database
+- **Open-Meteo API**: Open-source weather forecast and historical data
+
+## 🔄 Data Pipeline Architecture
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Data Sources  │    │   Extraction     │    │   Raw Storage   │
+│                 │    │                  │    │                 │
+│ • TheMealDB API │───▶│ • fetch_meals    │───▶│ • JSON files    │
+│ • Open-Meteo    │    │ • fetch_weather  │    │ • CSV files     │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                                │
+                                ▼
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│ Analytics Layer │    │  Transformation  │    │ Processed Data  │
+│                 │    │                  │    │                 │
+│ • BI Tools      │◀───│ • format_meals   │◀───│ • Parquet files │
+│ • ML Models     │    │ • format_weather │    │ • Structured    │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
+
+## 🚀 Data Pipeline
 
 ### Current Implementation
-1. **Data Extraction**: Fetch meal data from TheMealDB API and weather data from meteorological APIs
-2. **Data Transformation**: Clean, enhance, and structure raw JSON/CSV data
-3. **Data Storage**: Save processed data in Parquet format for efficient querying
+The system implements a complete Extract, Transform, Load (ETL) pipeline:
 
-### Planned Features
-- Weather data integration from meteorological APIs
-- Nutritional analysis correlations with climate patterns
-- Agricultural yield predictions based on weather conditions
+1. **Data Extraction** 
+   - **Meals**: Fetch comprehensive meal data from TheMealDB API by searching A-Z
+   - **Weather**: Extract hourly weather forecasts from Open-Meteo API for Paris coordinates
+   - **Storage**: Raw data saved as JSON and CSV with timestamps
 
-## Prerequisites
+2. **Data Transformation**
+   - **Cleaning**: Deduplication, null value handling, data type conversion
+   - **Enhancement**: Computed fields (preparation time estimates, temperature categorization)
+   - **Optimization**: Convert to Parquet format for 10x faster query performance
 
-- Docker Desktop (Windows/Mac) or Docker Engine (Linux)
-- Docker Compose v2.0+
-- Git
-- At least 8GB RAM available for containers
+3. **Data Storage**
+   - **Raw Layer**: `/include/raw/` - Timestamped JSON/CSV files for audit trail
+   - **Processed Layer**: `/include/formatted/` - Optimized Parquet files for analytics
+   - **Metadata**: Embedded fetch timestamps, data lineage, and quality metrics
 
-## Installation & Setup
+### Pipeline Features
+- **Automatic Triggering**: Fetch DAGs automatically trigger formatting DAGs
+- **Error Handling**: Comprehensive retry logic with exponential backoff
+- **Data Quality**: Built-in validation and logging for monitoring
+- **Scalability**: Spark-based processing handles large datasets efficiently
+- **Idempotency**: Timestamped outputs prevent data conflicts
+
+## 📋 Prerequisites
+
+### System Requirements
+- **OS**: Windows 10/11, macOS 10.14+, or Linux (Ubuntu 18.04+)
+- **Memory**: Minimum 8GB RAM (16GB recommended for Spark processing)
+- **Storage**: 5GB free disk space for containers and data
+- **Network**: Internet access for API calls and container downloads
+
+### Required Software
+- **Docker Desktop** (Windows/Mac) or **Docker Engine** (Linux) - v20.10+
+- **Docker Compose** v2.0+
+- **Git** for version control
+- **Astronomer CLI** (recommended) - `curl -sSL install.astronomer.io | sudo bash -s`
+
+### Optional Tools
+- **VS Code** with Docker extension for development
+- **Apache Superset** for data visualization (future integration)
+- **Jupyter Lab** for data exploration notebooks
+
+## ⚡ Quick Start
+
+### Installation & Setup
 
 1. **Clone the repository:**
    ```bash
@@ -38,101 +98,231 @@ The project uses a microservices architecture with the following components:
    cd nutriweather-datalake
    ```
 
-2. **Build and start the services:**
+2. **Start the services:**
    ```bash
-   # Start all services (Airflow + Spark cluster)
+   # Using Astronomer CLI (recommended)
    astro dev start
-
-   # Or manually with docker-compose (if not using Astronomer CLI)
+   
+   # Or using Docker Compose directly
    docker-compose up -d
    ```
 
-3. **Access the services:**
-   - Airflow UI: http://localhost:8080 (admin/admin)
-   - Spark Master UI: http://localhost:8081
+3. **Verify deployment:**
+   ```bash
+   # Check all services are running
+   docker-compose ps
+   
+   # View startup logs
+   docker-compose logs -f
+   ```
 
-## Development Workflow
+4. **Access the interfaces:**
+   - **Airflow UI**: http://localhost:8080 (admin/admin)
+   - **Spark Master UI**: http://localhost:8081
+   - **Container Health**: All services should show "healthy" status
 
-### Available Commands
+### First Pipeline Run
 
-| Command | Description |
-|---------|-------------|
-| `astro dev start` | Start the development environment |
-| `astro dev stop` | Stop all running containers |
-| `astro dev restart` | Restart the development environment |
-| `astro dev ps` | Show status of running containers |
-| `astro dev logs` | View logs from all services |
-| `astro dev bash` | Access Airflow scheduler container shell |
+1. Open Airflow UI at http://localhost:8080
+2. Enable the `fetch_meals_dag` and `fetch_weather_dag`
+3. Trigger both DAGs manually from the UI
+4. Monitor execution in the Graph View
+5. Check processed data in `/include/formatted/` directory
 
-### Alternative Docker Commands (without Astronomer CLI)
+## 🛠️ Development Workflow
 
-| Command | Description |
-|---------|-------------|
-| `docker-compose up -d` | Start services in detached mode |
-| `docker-compose down` | Stop and remove containers |
-| `docker-compose logs -f spark-master` | Follow Spark master logs |
-| `docker-compose exec spark-master bash` | Access Spark master container |
+### Management Commands
 
-## Project Structure
+| Command | Description | Use Case |
+|---------|-------------|----------|
+| `astro dev start` | Start the complete environment | Initial setup, development |
+| `astro dev stop` | Stop all containers gracefully | End of work session |
+| `astro dev restart` | Restart all services | After configuration changes |
+| `astro dev ps` | Show container status | Health monitoring |
+| `astro dev logs` | View aggregated logs | Debugging issues |
+| `astro dev bash` | Access Airflow scheduler shell | Direct container access |
+
+### Docker Compose Commands (Alternative)
+
+| Command | Description | Advanced Usage |
+|---------|-------------|----------------|
+| `docker-compose up -d` | Start in detached mode | Production-like setup |
+| `docker-compose down` | Stop and remove containers | Clean shutdown |
+| `docker-compose logs -f <service>` | Follow specific service logs | `spark-master`, `airflow-scheduler` |
+| `docker-compose exec <service> bash` | Access service shell | `spark-master`, `airflow-webserver` |
+| `docker-compose build` | Rebuild custom images | After Dockerfile changes |
+
+## 📁 Project Structure
 
 ```
 nutriweather-datalake/
-├── dags/                      # Airflow DAG definitions
-│   ├── fetch_meals_dag.py     # Data extraction pipeline
-│   ├── format_meals_dag.py    # Data transformation pipeline
-│   ├── fetch_weather_dag.py   # Weather data extraction
-│   └── format_weather_dag.py  # Weather data transformation
-├── include/                   # Shared code and data
-│   ├── scripts/               # Python processing scripts
-│   │   ├── fetch_meals.py     # MealDB API extraction
-│   │   ├── format_meals.py    # Data transformation logic
-│   │   └── format_weather.py  # Weather data transformation
-│   ├── raw/                   # Raw data storage (created at runtime)
-│   └── formatted/             # Processed data (created at runtime)
-├── apps/                      # Spark applications
-├── data/                      # Processed data output (created at runtime)
-├── docker-compose.override.yml # Spark cluster configuration
-├── Dockerfile                 # Custom Airflow image
-├── requirements.txt           # Python dependencies
-├── airflow_settings.yaml     # Airflow connections & variables
-└── .gitignore                # Git ignore file
+├── 🏗️ Infrastructure
+│   ├── docker-compose.override.yml    # Spark cluster configuration
+│   ├── Dockerfile                     # Custom Airflow image (OpenJDK-17)
+│   ├── requirements.txt               # Python dependencies
+│   ├── airflow_settings.yaml         # Connections & variables
+│   └── packages.txt                   # System packages
+│
+├── 🔄 Pipeline Definitions
+│   └── dags/                          # Airflow DAG definitions
+│       ├── fetch_meals_dag.py         # TheMealDB data extraction
+│       ├── format_meals_dag.py        # Meal data transformation
+│       ├── fetch_weather_dag.py       # Open-Meteo weather extraction  
+│       └── format_weather_dag.py      # Weather data transformation
+│
+├── 📊 Data Processing
+│   └── include/
+│       ├── scripts/                   # Processing logic
+│       │   ├── fetch_meals.py         # MealDB API client
+│       │   ├── format_meals.py        # PySpark meal processing
+│       │   └── format_weather.py      # Weather data transformation
+│       ├── raw/                       # Raw data storage (runtime)
+│       │   ├── meals/                 # JSON files with timestamps
+│       │   └── weather/               # CSV + JSON files with timestamps
+│       └── formatted/                 # Processed data (runtime)
+│           ├── meals/                 # Parquet files
+│           └── weather/               # Parquet files
+│
+├── ⚡ Spark Applications
+│   ├── apps/                          # Custom Spark applications
+│   └── data/                          # Spark output directory
+│
+└── 🧪 Quality Assurance
+    └── tests/
+        └── dags/                      # DAG validation tests
+            └── test_dag_example.py    # Syntax and structure tests
 ```
 
-## Data Pipeline Details
+### Key Directories Explained
 
-### DAGs (Directed Acyclic Graphs)
+- **`dags/`**: Contains all Airflow DAG definitions following TaskFlow API patterns
+- **`include/scripts/`**: Reusable Python modules for data processing logic
+- **`include/raw/`**: Raw data storage with timestamped files for audit trail
+- **`include/formatted/`**: Optimized Parquet files for analytical queries
+- **`apps/`**: Custom Spark applications and job definitions
+- **Runtime directories**: Created automatically during pipeline execution
 
-#### 1. Fetch Meals DAG (`fetch_meals_dag`)
-- **Purpose**: Extract meal data from TheMealDB API
-- **Schedule**: Manual trigger
-- **Tasks**:
-  - `extract_meals_from_api`: Fetches meals by searching A-Z
-  - `save_raw_meals`: Stores raw JSON data with timestamps
-  - `trigger_formatting`: Automatically triggers transformation pipeline
+## 🔧 Configuration & Environment
 
-#### 2. Format Meals DAG (`format_meals_dag`)
-- **Purpose**: Transform and enhance raw meal data
-- **Schedule**: Triggered by fetch DAG
-- **Tasks**:
-  - `format_meals`: Uses PySpark to clean and structure data
-  - Adds estimated preparation time and temperature
-  - Outputs Parquet files for efficient querying
+### Infrastructure Configuration
 
-#### 3. Fetch Weather DAG (`fetch_weather_dag`)
-- **Purpose**: Extract weather data from meteorological APIs
-- **Schedule**: Manual trigger
-- **Tasks**:
-  - `extract_weather_from_api`: Fetches weather data
-  - `save_raw_weather`: Stores raw CSV data with timestamps
-  - `trigger_formatting`: Automatically triggers transformation pipeline
+#### Spark Cluster Settings
+```yaml
+# docker-compose.override.yml
+spark-master:
+  image: bitnami/spark:3.5.6
+  ports: ['8081:8081', '7077:7077']
+  environment:
+    SPARK_MASTER_WEBUI_PORT: 8081
+    
+spark-worker:
+  image: bitnami/spark:3.5.6  
+  environment:
+    SPARK_WORKER_MEMORY: 2G
+    SPARK_WORKER_CORES: 2
+```
 
-#### 4. Format Weather DAG (`format_weather_dag`)
-- **Purpose**: Transform and enhance raw weather data
-- **Schedule**: Triggered by fetch DAG
-- **Tasks**:
-  - `format_weather`: Cleans and structures CSV data
-  - Handles both CSV (preferred) and JSON (legacy) formats
-  - Outputs Parquet files for efficient querying
+#### Airflow Connections
+```yaml
+# airflow_settings.yaml
+connections:
+  - conn_id: my_spark_conn
+    conn_type: spark
+    conn_host: spark://spark-master
+    conn_port: 7077
+```
+
+#### Python Dependencies
+```pip
+# requirements.txt - Key packages
+pyspark==3.5.6                        # Distributed processing
+apache-airflow-providers-apache-spark  # Spark integration
+requests>=2.28.0                       # HTTP API calls
+pandas>=1.5.0                          # Data manipulation
+pyarrow>=10.0.0                        # Parquet format support
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AIRFLOW__CORE__EXECUTOR` | `LocalExecutor` | Task execution method |
+| `AIRFLOW__CORE__SQL_ALCHEMY_CONN` | `postgresql://...` | Database connection |
+| `SPARK_MASTER_URL` | `spark://spark-master:7077` | Spark cluster endpoint |
+| `JAVA_HOME` | `/usr/lib/jvm/java-17-openjdk-amd64` | Java runtime path |
+
+### API Configuration
+
+#### Weather Data (Open-Meteo)
+- **Endpoint**: `https://api.open-meteo.com/v1/forecast`
+- **Location**: Paris, France (48.8534°N, 2.3488°E)
+- **Parameters**: Temperature, humidity, cloud cover, wind direction
+- **Frequency**: Hourly forecasts, 1-day ahead
+
+#### Meal Data (TheMealDB)
+- **Endpoint**: `https://www.themealdb.com/api/json/v1/1/search.php`
+- **Method**: Alphabetical search (A-Z) for comprehensive coverage
+- **Rate Limiting**: Built-in delays to respect API limits
+
+## 📊 Data Pipeline Details
+
+### DAG Architecture & Execution Flow
+
+#### 1. 🍽️ Fetch Meals DAG (`fetch_meals_dag`)
+```python
+# Pipeline: API → Raw JSON → Trigger Formatting
+Tasks: extract_meals_from_api → save_raw_meals → trigger_formatting
+```
+- **Purpose**: Extract comprehensive meal database from TheMealDB
+- **Schedule**: Manual trigger (on-demand execution)
+- **Data Volume**: ~300 meals covering global cuisines
+- **Output Format**: Timestamped JSON files in `/include/raw/meals/`
+- **Error Handling**: 3 retries with exponential backoff
+- **Trigger**: Automatically launches `format_meals_dag` upon completion
+
+#### 2. 🏭 Format Meals DAG (`format_meals_dag`)
+```python
+# Pipeline: Raw JSON → PySpark Processing → Parquet
+Tasks: format_meals (PySpark job execution)
+```
+- **Purpose**: Transform and enhance raw meal data for analytics
+- **Schedule**: Triggered by fetch DAG completion
+- **Processing Engine**: PySpark for distributed computation
+- **Enhancements**: 
+  - Estimated preparation time based on meal complexity
+  - Temperature categorization (hot/cold/ambient)
+  - Data deduplication by meal ID
+  - Ingredient parsing and standardization
+- **Output**: Optimized Parquet files in `/include/formatted/meals/`
+
+#### 3. 🌤️ Fetch Weather DAG (`fetch_weather_dag`)
+```python
+# Pipeline: API → Raw CSV + JSON → Trigger Formatting  
+Tasks: extract_weather_from_api → trigger_formatting
+```
+- **Purpose**: Extract hourly weather forecasts from Open-Meteo API
+- **Schedule**: Manual trigger (configurable for automation)
+- **Location**: Paris, France coordinates (48.8534°N, 2.3488°E)
+- **Data Points**: Temperature, humidity, cloud cover, wind direction
+- **Dual Storage**: 
+  - CSV format for structured data analysis
+  - JSON format preserving complete API response
+- **Forecast Range**: 24-hour ahead predictions with hourly granularity
+
+#### 4. 🌦️ Format Weather DAG (`format_weather_dag`)
+```python
+# Pipeline: Raw CSV/JSON → Python Processing → Parquet
+Tasks: format_weather (Python script execution)
+```
+- **Purpose**: Standardize and optimize weather data for queries
+- **Schedule**: Triggered by fetch DAG completion  
+- **Multi-format Support**: Handles both CSV (preferred) and JSON (legacy)
+- **Processing Features**:
+  - Time zone normalization
+  - Unit conversion and standardization
+  - Data quality validation
+  - Missing value imputation
+- **Output**: Parquet files optimized for time-series analysis
 
 ### Data Processing Features
 
