@@ -1,10 +1,16 @@
 """
 ## Weather Data Format DAG
 
-This DAG formats raw weather data from Open-Meteo fetch into structured Parquet files.
-It reads the latest raw CSV file and saves it in Parquet format for efficient querying.
+This DAG formats comprehensive raw weather data from Open-Meteo fetch into structured Parquet files.
+It handles multiple data types: hourly temperature data, daily UV index data, current conditions,
+and legacy format data. The processed data is optimized for analytics and time-series analysis.
 
-This is the second stage of the weather processing pipeline.
+Supports multiple input formats:
+- CSV files (hourly and daily separately)
+- JSON files (comprehensive response with metadata)
+- Legacy CSV format (backward compatibility)
+
+This is the second stage of the enhanced weather processing pipeline.
 """
 
 from airflow.decorators import dag
@@ -22,9 +28,7 @@ from datetime import datetime
     tags=["weather", "format", "parquet"],
     max_active_runs=1,
 )
-def format_weather_dag():
-    
-    # Format weather using Python script
+def format_weather_dag():      # Format weather using enhanced Python script with auto-dependency installation
     format_weather_task = BashOperator(
         task_id="format_weather",
         bash_command="cd /usr/local/airflow && python include/scripts/format_weather.py",
