@@ -1,0 +1,11 @@
+airflow:
+    connections:
+        - conn_id: my_spark_conn
+          conn_type: spark
+          conn_host: spark://spark-master
+          conn_port: 7077
+          conn_extra:
+              deploy-mode: client
+              spark_binary: spark-submit
+    pools: []
+    variables: []
