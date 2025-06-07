@@ -1,157 +1,295 @@
 # NutriWeather Data Lake
 
-A comprehensive data processing pipeline that combines nutritional meal data with weather information to enable cross-domain analytics for agricultural and dietary insights.
+A robust data lake and analytics pipeline that integrates nutritional meal data with weather information to enable cross-domain analytics for agricultural, dietary, and environmental insights.
 
-## 🏗️ Architecture Overview
+---
 
-The NutriWeather Data Lake consists of three main processing stages:
+## 🚀 Overview
 
-1. **Data Ingestion & Formatting** - Raw data collection and standardization
-2. **Data Merging** - Combining meal and weather datasets
-3. **Analytics & Insights** - Cross-domain analysis capabilities
+NutriWeather Data Lake is a modular, production-ready data pipeline built on **Apache Airflow** and **Apache Spark**. It ingests, processes, and merges data from public APIs (TheMealDB and Open-Meteo), producing analytical datasets for downstream applications.
+
+---
+
+## 🏗️ Architecture
+
+### High-Level Pipeline
 
 ```
 Raw Data Sources
 ├── TheMealDB API (Meal Data)
 └── Open-Meteo API (Weather Data)
        ↓
-Formatting Layer
-├── format_meals_dag.py
-└── format_weather_dag.py
+Airflow DAGs (Orchestration)
+├── fetch_meals.py
+├── fetch_weather.py
+├── format_meals.py
+├── format_weather.py
+└── merge_formatted.py
        ↓
-Merge Layer
-└── merge_formatted_dag.py
-       ↓
-Analytics Layer
-└── Enhanced meal-weather datasets
+Data Lake Storage (Local FS or Volume)
+├── include/raw/         # Raw API data
+├── include/formatted/   # Cleaned/structured data
+└── include/usage/       # Analytical/merged outputs
 ```
+
+### Data Flow
+
+1. **Ingestion**: Fetches meal and weather data from APIs.
+2. **Formatting**: Cleans, enriches, and structures data using PySpark.
+3. **Merging**: Combines meal and weather data for analytics.
+4. **Analytics**: Enables cross-domain queries and insights.
+
+---
+
+## 🧰 Technologies & Tools
+
+| Technology         | Role/Usage                                                                                   |
+|--------------------|---------------------------------------------------------------------------------------------|
+| **Apache Airflow** | Workflow orchestration, DAG scheduling, monitoring, and dependency management               |
+| **Apache Spark**   | Distributed data processing (ETL, transformation, Parquet/JSON handling)                    |
+| **Python 3.8+**    | Core programming language for all scripts and orchestration                                 |
+| **Pandas**         | Data manipulation for smaller datasets (e.g., weather formatting)                           |
+| **Requests**       | HTTP client for API integration (TheMealDB, Open-Meteo, Nominatim)                          |
+| **openmeteo-requests** | Specialized client for Open-Meteo API                                                   |
+| **requests-cache** | Caching for API calls (weather geocoding)                                                   |
+| **retry-requests** | Robustness for API calls (automatic retries)                                                |
+| **Parquet**        | Efficient columnar storage for formatted meal data                                          |
+| **JSON**           | Standard format for weather and merged outputs                                              |
+| **Elasticsearch**  | (Optional) For indexing and search (see Airflow 3 upgrade notes)                           |
+
+---
 
 ## 📁 Project Structure
 
 ```
 nutriweather-datalake/
-├── dags/                           # Airflow DAG definitions
-│   ├── format_meals_dag.py        # Meal data formatting pipeline
-│   ├── format_weather_dag.py      # Weather data formatting pipeline
-│   └── merge_formatted_dag.py     # Data merging pipeline
+├── dags/                           # Airflow DAG definitions (Python)
+│   ├── fetch_meals_dag.py
+│   ├── fetch_weather_dag.py
+│   ├── format_meals_dag.py
+│   ├── format_weather_dag.py
+│   └── merge_formatted_dag.py
 ├── include/
-│   ├── scripts/                   # Processing scripts
-│   │   ├── format_meals.py       # Meal data formatting logic
-│   │   ├── format_weather.py     # Weather data formatting logic
-│   │   └── merge_formatted.py    # Data merging logic
-│   ├── raw/                      # Raw data storage
-│   │   ├── meals/                # Raw meal JSON files
-│   │   └── weather/              # Raw weather JSON files
-│   ├── formatted/                # Processed data storage
-│   │   ├── meals/                # Formatted meal Parquet files
-│   │   ├── weather/              # Formatted weather JSON files
-│   │   └── merged/               # Merged analytical datasets
-│   └── logs/                     # Processing logs
-└── README.md                     # This file
+│   ├── scripts/                    # Data processing scripts (Python)
+│   │   ├── fetch_meals.py
+│   │   ├── fetch_weather.py
+│   │   ├── format_meals.py
+│   │   ├── format_weather.py
+│   │   └── merge_formatted.py
+│   ├── raw/                        # Raw data storage (JSON)
+│   │   ├── meals/
+│   │   └── weather/
+│   ├── formatted/                  # Processed data storage
+│   │   ├── meals/                  # Parquet files
+│   │   ├── weather/                # JSON files
+│   │   └── merged/                 # (Optional) Merged datasets
+│   ├── usage/                      # Final merged analytics outputs (JSON)
+│   ├── logs/                       # Processing logs
+│   └── advice_dataset.csv          # Meal/weather advice mapping
+├── requirements.txt                # Python dependencies
+├── README.md                       # Project documentation
+└── AIRFLOW_3_UPGRADE_NOTES.md      # Upgrade notes for Airflow 3.x
 ```
 
-## 🚀 Getting Started
+---
+
+## ⚙️ Configuration & Setup
 
 ### Prerequisites
 
-- Apache Airflow 2.x
-- Python 3.8+
-- Apache Spark (for data processing)
-- Required Python packages:
-  - `pyspark`
-  - `pandas`
-  - `requests`
+- **Python**: 3.8 or newer
+- **Apache Airflow**: 2.x or 3.x (see upgrade notes)
+- **Apache Spark**: 3.x (local or cluster)
+- **pip**: For Python package management
 
 ### Installation
 
-1. Clone the repository
-2. Install dependencies
-3. Configure Airflow to point to the `dags/` directory
-4. Start the Airflow scheduler and webserver
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/your-org/nutriweather-datalake.git
+   cd nutriweather-datalake
+   ```
 
-### Running the Pipeline
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-The data processing pipeline consists of three sequential DAGs:
+3. **Configure Airflow**
+   - Set `AIRFLOW_HOME` to the project directory or desired location.
+   - Point Airflow to the `dags/` directory:
+     ```bash
+     export AIRFLOW_HOME=$(pwd)
+     export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/dags
+     ```
 
-1. **Format Meals DAG** (`format_meals_dag`)
-   - Fetches meal data from TheMealDB API
-   - Standardizes and enriches meal information
-   - Outputs: Parquet files in `include/formatted/meals/`
+4. **Configure Spark**
+   - Set `SPARK_HOME` if running Spark locally.
+   - Ensure `pyspark` is installed and available.
 
-2. **Format Weather DAG** (`format_weather_dag`)
-   - Fetches weather data from Open-Meteo API
-   - Processes current and hourly weather information
-   - Outputs: JSON files in `include/formatted/weather/`
+5. **Start Airflow**
+   ```bash
+   airflow db init
+   airflow scheduler &
+   airflow webserver &
+   ```
 
-3. **Merge Formatted DAG** (`merge_formatted_dag`)
-   - Combines meal and weather datasets
-   - Creates enhanced analytical datasets with cross-domain insights
-   - Outputs: JSON files in `include/formatted/merged/`
+---
+
+## 🔗 API Integrations
+
+- **TheMealDB**: `https://www.themealdb.com/api/json/v1/1/`
+- **Open-Meteo**: `https://api.open-meteo.com/v1/forecast`
+- **Nominatim (OpenStreetMap)**: For reverse geocoding weather locations
+
+---
+
+## 🛠️ Airflow DAGs & Scripts
+
+| DAG Name              | Script                      | Description                                               |
+|-----------------------|----------------------------|-----------------------------------------------------------|
+| `fetch_meals_dag`     | `fetch_meals.py`           | Fetches meal data from TheMealDB API                      |
+| `fetch_weather_dag`   | `fetch_weather.py`         | Fetches weather data from Open-Meteo API                  |
+| `format_meals_dag`    | `format_meals.py`          | Formats and enriches meal data, outputs Parquet           |
+| `format_weather_dag`  | `format_weather.py`        | Formats weather data, outputs JSON                        |
+| `merge_formatted_dag` | `merge_formatted.py`       | Merges meal and weather data for analytics                |
+
+- **All DAGs** are orchestrated via Airflow and can be triggered manually or scheduled.
+- **Scripts** are invoked by Airflow's `BashOperator` and run in the Airflow environment.
+
+---
+
+## 🗄️ Data Storage
+
+- **Raw Data**: `include/raw/`
+  - Meals: JSON files from TheMealDB
+  - Weather: JSON files from Open-Meteo
+- **Formatted Data**: `include/formatted/`
+  - Meals: Parquet files (columnar, efficient for analytics)
+  - Weather: JSON files (structured, time-series)
+- **Merged/Usage Data**: `include/usage/`
+  - Final merged recommendations and analytics datasets (JSON)
+
+---
+
+## 🧑‍💻 Technologies in Detail
+
+### Apache Airflow
+
+- **Purpose**: Orchestrates all ETL steps as DAGs.
+- **Configuration**: DAGs defined in `dags/`, scripts in `include/scripts/`.
+- **Scheduling**: Manual or scheduled via Airflow UI/CLI.
+- **Monitoring**: Airflow UI provides DAG run status, logs, and task details.
+
+### Apache Spark
+
+- **Purpose**: High-performance ETL, data transformation, Parquet/JSON handling.
+- **Usage**: All heavy data processing (formatting, merging) is done via PySpark scripts.
+- **Configuration**: Spark session is created in each script; can be run locally or on a cluster.
+
+### Python & Libraries
+
+- **pandas**: Used for lightweight data manipulation (weather formatting).
+- **requests/openmeteo-requests**: API calls for data ingestion.
+- **pyarrow**: Parquet file handling.
+- **numpy**: Numeric operations.
+- **requests-cache/retry-requests**: Robust, cached API calls.
+
+### Data Formats
+
+- **JSON**: Used for raw and merged data, and for weather data.
+- **Parquet**: Used for formatted meal data (efficient for analytics).
+
+---
 
 ## 📊 Data Schema
 
-### Meal Data Fields
+### Meal Data (Parquet)
+
 - `meal_id`: Unique identifier
 - `meal_name`: Recipe name
-- `category`: Food category (e.g., Dessert, Chicken)
+- `category`: Food category
 - `region`: Cuisine origin
-- `ingredients`: Ingredient list with quantities
-- `instructions`: Cooking steps
-- `preparation_time`: Estimated cooking time
-- `temperature`: Recommended serving temperature
+- `ingredients`: List of ingredients with quantities
+- `instructions`: Cooking steps (cleaned, structured)
+- `preparation_time`: Estimated cooking time (minutes)
+- `temperature`: Recommended serving temperature (°C)
 - `tags`: Recipe tags
+- `image_url`, `youtube_url`, `source_url`: Media links
 
-### Weather Data Fields
-- `location_name`: Geographic location
-- `current_temperature`: Real-time temperature
-- `humidity`: Current humidity percentage
-- `wind_speed`: Wind speed measurement
-- `hourly_weather`: 24-hour temperature history
+### Weather Data (JSON)
 
-### Merged Data Features
-- **Temperature Matching**: Compares meal serving temperature with current weather
-- **Weather Recommendations**: Suggests meal types based on weather conditions
-- **Seasonal Analysis**: Enables correlation between weather patterns and food preferences
+- `location`: Name, coordinates, elevation, timezone
+- `current`: Temperature, humidity, wind speed, timestamp
+- `hourly`: List of hourly temperature records (24h)
+- `daily`: List of daily UV index records
 
-## 🔧 Configuration
+### Merged Data (JSON)
 
-### Environment Variables
-- `AIRFLOW_HOME`: Airflow installation directory
-- `SPARK_HOME`: Spark installation directory (if using local Spark)
+- `weather_location`: Weather context
+- `current_weather`: Snapshot at merge time
+- `hourly_weather_data`: 24-hour temperature history
+- `daily_weather_summary`: UV index summary
+- `recommended_meal`: Best-matched meal for current weather
+- `recommended_advice`: Contextual advice based on temperature
+- `merge_metadata`: Timestamps, counts, method
 
-### API Endpoints
-- **TheMealDB**: `https://www.themealdb.com/api/json/v1/1/`
-- **Open-Meteo**: `https://api.open-meteo.com/v1/forecast`
+---
 
-## 📈 Analytics Use Cases
+## 📝 How to Run the Pipeline
 
-1. **Seasonal Food Trends**: Analyze correlation between weather patterns and meal preferences
-2. **Regional Cuisine Analysis**: Compare food choices across different climates
-3. **Temperature-Based Recommendations**: Suggest appropriate meals based on current weather
-4. **Agricultural Insights**: Correlate weather conditions with ingredient availability
+1. **Trigger DAGs in Order** (via Airflow UI or CLI):
+   - `fetch_meals_dag`
+   - `fetch_weather_dag`
+   - `format_meals_dag`
+   - `format_weather_dag`
+   - `merge_formatted_dag`
 
-## 🔍 Monitoring & Logging
+2. **Outputs**:
+   - Formatted meals: `include/formatted/meals/`
+   - Formatted weather: `include/formatted/weather/`
+   - Merged analytics: `include/usage/`
 
-- All processing steps are logged with timestamps
-- Failed runs include detailed error information
-- Data quality metrics are tracked throughout the pipeline
-- Airflow UI provides visual monitoring of DAG runs
+---
+
+## 🧪 Testing & Monitoring
+
+- **Airflow UI**: Monitor DAG runs, task logs, and failures.
+- **Logs**: All scripts log to stdout and `include/logs/`.
+- **Data Quality**: Scripts include basic validation and error handling.
+- **Manual Testing**: Run scripts directly for debugging.
+
+---
+
+## 🔒 Security & Best Practices
+
+- **API Keys**: Not required for public APIs used.
+- **Isolation**: All processing is local to the Airflow environment.
+- **Error Handling**: Robust exception handling in all scripts.
+
+---
 
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+3. Make your changes and add tests
+4. Submit a pull request
 
-## 📝 License
+---
 
-This project is open source and available under the MIT License.
+## 📄 License
 
-## 🔗 External Resources
+MIT License
+
+---
+
+## 🔗 References
 
 - [Apache Airflow Documentation](https://airflow.apache.org/docs/)
+- [Apache Spark Documentation](https://spark.apache.org/docs/latest/)
 - [TheMealDB API](https://www.themealdb.com/api.php)
 - [Open-Meteo API](https://open-meteo.com/en/docs)
-- [Apache Spark Documentation](https://spark.apache.org/docs/latest/)
+- [OpenStreetMap Nominatim](https://nominatim.org/release-docs/latest/api/Reverse/)
+
+---
