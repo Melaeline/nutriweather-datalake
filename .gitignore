@@ -1,5 +1,4 @@
 # Local development files
-.env
 .vscode/
 .idea/
 *.log
