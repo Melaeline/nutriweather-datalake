@@ -1,0 +1,48 @@
+[
+  {
+    "@timestamp": "2025-06-07T10:00:00Z",
+    "data_type": "weather_api_usage",
+    "endpoint": "/weather/current",
+    "location": {
+      "latitude": 40.7128,
+      "longitude": -74.0060,
+      "city": "New York",
+      "country": "USA"
+    },
+    "response_time_ms": 150,
+    "status_code": 200,
+    "user_agent": "nutriweather-datalake/1.0",
+    "data_size_bytes": 2048
+  },
+  {
+    "@timestamp": "2025-06-07T10:05:00Z",
+    "data_type": "meal_api_usage",
+    "endpoint": "/meals/search",
+    "search_term": "chicken",
+    "category": "Poultry",
+    "response_time_ms": 200,
+    "status_code": 200,
+    "results_count": 15,
+    "user_agent": "nutriweather-datalake/1.0"
+  },
+  {
+    "@timestamp": "2025-06-07T10:10:00Z",
+    "data_type": "data_processing",
+    "process_type": "format_weather",
+    "input_records": 48,
+    "output_records": 48,
+    "processing_time_ms": 3500,
+    "memory_usage_mb": 128,
+    "status": "success"
+  },
+  {
+    "@timestamp": "2025-06-07T10:15:00Z",
+    "data_type": "data_processing",
+    "process_type": "format_meals",
+    "input_records": 25,
+    "output_records": 25,
+    "processing_time_ms": 2800,
+    "memory_usage_mb": 96,
+    "status": "success"
+  }
+]

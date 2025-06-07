@@ -9,6 +9,8 @@ The project implements a microservices architecture with the following technolog
 ### Core Technologies
 - **Apache Airflow 2.8+**: Workflow orchestration and pipeline management
 - **Apache Spark 3.5.6**: Distributed data processing and transformation  
+- **Elasticsearch 8.11.0**: Search engine and analytics platform
+- **Kibana 8.11.0**: Data visualization and monitoring dashboard
 - **Python 3.12**: Data processing scripts and pipeline logic
 - **Docker & Docker Compose**: Container orchestration for development
 - **Astronomer CLI**: Development and deployment tooling
@@ -37,8 +39,9 @@ The project implements a microservices architecture with the following technolog
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │ Analytics Layer │    │  Transformation  │    │ Processed Data  │
 │                 │    │                  │    │                 │
-│ • BI Tools      │◀───│ • format_meals   │◀───│ • Parquet files │
-│ • ML Models     │    │ • format_weather │    │ • Structured    │
+│ • Kibana        │◀───│ • format_meals   │◀───│ • Parquet files │
+│ • Elasticsearch │    │ • format_weather │    │ • Structured    │
+│ • ML Models     │    │ • ES indexing    │    │ • Searchable    │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 

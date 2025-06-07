@@ -7,5 +7,22 @@ airflow:
           conn_extra:
               deploy-mode: client
               spark_binary: spark-submit
+        - conn_id: elasticsearch_default
+          conn_type: http
+          conn_host: es01
+          conn_port: 9200
+          conn_schema: https
+          conn_login: elastic
+          conn_password: elastic
+          conn_extra:
+              verify_ssl: false
     pools: []
-    variables: []
+    variables:
+        - key: ELASTICSEARCH_HOST
+          value: "https://es01:9200"
+        - key: ELASTICSEARCH_USERNAME
+          value: "elastic"
+        - key: ELASTICSEARCH_PASSWORD
+          value: "elastic"
+        - key: KIBANA_HOST
+          value: "http://kibana:5601"
