@@ -269,18 +269,25 @@ nutriweather-datalake/
 
 ---
 
-## 🤝 Contributing
+## 🌠 Astro CLI for Airflow Containers & Configuration
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes and add tests
-4. Submit a pull request
+[Astro CLI](https://docs.astronomer.io/astro/cli/overview) is a tool for creating, managing, and deploying Airflow environments using containers. It is **not** a frontend or dashboarding framework. Instead, Astro CLI helps you:
 
----
+- Initialize and configure Airflow projects
+- Build and run Airflow containers locally or in the cloud
+- Manage Airflow dependencies and environment variables
+- Simplify Airflow deployment and orchestration
 
-## 📄 License
+**How to use Astro CLI with NutriWeather Data Lake:**
+1. Install the Astro CLI (`pip install astro-cli` or see Astro docs).
+2. Use `astro dev init` to scaffold an Airflow project.
+3. Place your DAGs and scripts in the appropriate directories.
+4. Use `astro dev start` to launch Airflow in containers for local development.
+5. Configure Airflow environment variables and connections as needed.
 
-MIT License
+> **Note:** Astro CLI is for Airflow infrastructure management. For frontend/dashboarding, use a separate framework (e.g., Astro web framework, React, etc.) if desired.
+
+Astro CLI is optional but recommended for teams seeking robust, containerized Airflow development and deployment.
 
 ---
 
