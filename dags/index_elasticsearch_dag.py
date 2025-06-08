@@ -3,24 +3,42 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from elasticsearch import Elasticsearch
 import json
+import os
+import glob
 
 # Configuration
 ELASTIC_HOST = "es01"
 ELASTIC_PORT = 9200
 ELASTIC_SCHEME = "http"
 INDEX_NAME = "sample_index"
-FILE_PATH = "include/usage/merged_data_20250607_210845.json"
+USAGE_FOLDER = "include/usage"
+
+def get_latest_merged_data_file():
+    """Find the latest merged data file based on file modification time"""
+    pattern = os.path.join(USAGE_FOLDER, "merged_data_*.json")
+    files = glob.glob(pattern)
+    
+    if not files:
+        raise FileNotFoundError(f"No merged data files found in {USAGE_FOLDER}")
+    
+    # Find the file with the latest modification time using max()
+    latest_file = max(files, key=os.path.getmtime)
+    print(f"Using latest merged data file: {os.path.basename(latest_file)}")
+    return latest_file
 
 def index_file_to_elasticsearch():
     es = Elasticsearch(
         hosts=[f"{ELASTIC_SCHEME}://{ELASTIC_HOST}:{ELASTIC_PORT}"]
     )
 
-    with open(FILE_PATH, "r") as file:
+    # Get the latest merged data file
+    file_path = get_latest_merged_data_file()
+    
+    with open(file_path, "r") as file:
         doc = json.load(file)
 
     response = es.index(index=INDEX_NAME, document=doc)
-    print(f"Document indexed with ID: {response['_id']}")
+    print(f"Document indexed with ID: {response['_id']} from file: {os.path.basename(file_path)}")
 
 default_args = {
     "owner": "airflow",
