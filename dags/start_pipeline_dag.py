@@ -101,36 +101,15 @@ def start_pipeline_dag():
         cwd="/usr/local/airflow"
     )
 
-    # STAGE 4: INDEX TO ELASTICSEARCH
-    @task
-    def index_to_elasticsearch():
-        """Index merged data to Elasticsearch."""
-        ELASTIC_HOST = "es01"
-        ELASTIC_PORT = 9200
-        ELASTIC_SCHEME = "http"
-        INDEX_NAME = "nutriweather_index"
-        USAGE_FOLDER = "/usr/local/airflow/include/usage"
-        
-        es = Elasticsearch(
-            hosts=[f"{ELASTIC_SCHEME}://{ELASTIC_HOST}:{ELASTIC_PORT}"]
-        )
-
-        # Get the latest merged data file
-        pattern = os.path.join(USAGE_FOLDER, "merged_data_*.json")
-        files = glob.glob(pattern)
-        
-        if not files:
-            raise FileNotFoundError(f"No merged data files found in {USAGE_FOLDER}")
-        
-        latest_file = max(files, key=os.path.getmtime)
-        print(f"Indexing file: {os.path.basename(latest_file)}")
-        
-        with open(latest_file, "r") as file:
-            doc = json.load(file)
-
-        response = es.index(index=INDEX_NAME, document=doc)
-        print(f"Document indexed with ID: {response['_id']}")
-        return response['_id']
+    # STAGE 4: TRIGGER ELASTICSEARCH INDEXING DAG
+    trigger_indexing_task = TriggerDagRunOperator(
+        task_id="trigger_elasticsearch_indexing",
+        trigger_dag_id="index_elasticsearch_dag",
+        wait_for_completion=True,
+        poke_interval=30,
+        allowed_states=["success"],
+        failed_states=["failed"]
+    )
 
     # PIPELINE DEPENDENCIES
     meals_fetch = fetch_meals_data()
@@ -140,7 +119,7 @@ def start_pipeline_dag():
     fetch_weather_task >> format_weather_task
     
     # Sequential processing after formatting
-    [format_meals_task, format_weather_task] >> merge_data_task >> index_to_elasticsearch()
+    [format_meals_task, format_weather_task] >> merge_data_task >> trigger_indexing_task
 
 
 start_pipeline_dag()

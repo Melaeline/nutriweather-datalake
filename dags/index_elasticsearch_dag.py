@@ -10,8 +10,8 @@ import glob
 ELASTIC_HOST = "es01"
 ELASTIC_PORT = 9200
 ELASTIC_SCHEME = "http"
-INDEX_NAME = "sample_index"
-USAGE_FOLDER = "include/usage"
+INDEX_NAME = "nutriweather_index"
+USAGE_FOLDER = "/usr/local/airflow/include/usage"
 
 def get_latest_merged_data_file():
     """Find the latest merged data file based on file modification time"""

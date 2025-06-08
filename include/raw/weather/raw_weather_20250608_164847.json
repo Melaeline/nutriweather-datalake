@@ -8,11 +8,11 @@
     "utc_offset_seconds": 7200
   },
   "current": {
-    "time": 1749400200,
+    "time": 1749401100,
     "data": {
-      "temperature_2m": 19.649999618530273,
+      "temperature_2m": 19.600000381469727,
       "relative_humidity_2m": 39.0,
-      "wind_speed_10m": 12.387348175048828
+      "wind_speed_10m": 12.031756401062012
     }
   },
   "hourly": {
