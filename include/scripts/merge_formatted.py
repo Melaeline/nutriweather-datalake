@@ -249,13 +249,6 @@ def main():
         print(f"Advice: {selected_advice['advice']}")
         print(f"Output file: {json_filename}")
         
-        # Verify hourly data is included
-        if 'hourly_weather_data' in merged_record:
-            hourly_data = merged_record['hourly_weather_data']
-            print(f"✅ Hourly weather data included ({len(hourly_data)} hours)")
-        else:
-            print("❌ Warning: Hourly weather data missing!")
-        
     except Exception as e:
         print(f"Error in data merge: {e}")
         traceback.print_exc()
