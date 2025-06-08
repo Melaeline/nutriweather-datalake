@@ -19,6 +19,6 @@
 {"@timestamp": "2025-06-08 16:00:00", "temperature": 19.8, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.86, "longitude": 2.34}
 {"@timestamp": "2025-06-08 17:00:00", "temperature": 19.6, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.86, "longitude": 2.34}
 {"@timestamp": "2025-06-08 18:00:00", "temperature": 19.0, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.86, "longitude": 2.34}
-{"@timestamp": "2025-06-08 19:00:00", "temperature": 18.3, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.86, "longitude": 2.34}
-{"@timestamp": "2025-06-08 20:00:00", "temperature": 17.5, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.86, "longitude": 2.34}
-{"@timestamp": "2025-06-08 21:00:00", "temperature": 16.3, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.86, "longitude": 2.34}
+{"@timestamp": "2025-06-08 19:00:00", "temperature": 18.5, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.86, "longitude": 2.34}
+{"@timestamp": "2025-06-08 20:00:00", "temperature": 17.7, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.86, "longitude": 2.34}
+{"@timestamp": "2025-06-08 21:00:00", "temperature": 16.9, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.86, "longitude": 2.34}

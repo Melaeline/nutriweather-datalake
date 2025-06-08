@@ -45,37 +45,45 @@ def split_instructions(instructions):
 
 
 def estimate_prep_time(meal_name):
+    """Estimate preparation time based on meal name - deterministic."""
     if not meal_name:
-        return random.randint(25, 60)
+        return 30  # Default value instead of random
     
     meal_lower = meal_name.lower()
     
+    # Calculate base time from meal name length and characteristics
+    base_time = len(meal_name) % 20 + 20
+    
     if any(keyword in meal_lower for keyword in ["soup", "stew", "roast", "pot roast", "bake", "casserole", "lasagna", "tagine", "biryani", "rendang"]):
-        return random.randint(60, 120)
+        return min(120, base_time + 60)
     elif any(keyword in meal_lower for keyword in ["salad", "sandwich", "omelette", "pancake", "toast"]):
-        return random.randint(10, 25)
+        return max(10, base_time - 15)
     elif any(keyword in meal_lower for keyword in ["pie", "cake", "tart", "brownie", "pudding", "cookies", "cheesecake"]):
-        return random.randint(30, 90)
+        return min(90, base_time + 40)
     elif any(keyword in meal_lower for keyword in ["grill", "fry", "chops", "cutlet", "sauté"]):
-        return random.randint(20, 45)
+        return min(45, base_time + 10)
     else:
-        return random.randint(25, 60)
+        return base_time + 10
 
 
 def estimate_temperature(meal_name):
+    """Estimate ideal serving temperature based on meal name - deterministic."""
     if not meal_name:
-        return random.randint(15, 25)
+        return 20  # Default moderate temperature
     
     meal_lower = meal_name.lower()
     
+    # Calculate base temperature from meal characteristics
+    name_hash = sum(ord(c) for c in meal_lower) % 15 + 10
+    
     if any(keyword in meal_lower for keyword in ["soup", "stew", "roast", "pot roast", "hotpot", "chili", "bake", "casserole"]):
-        return random.randint(5, 15)
-    elif any(keyword in meal_lower for keyword in ["salad", "sushi", "cold", "congee"]):
-        return random.randint(20, 35)
+        return max(5, name_hash - 5)  # Hot dishes: 5-15°C
+    elif any(keyword in meal_lower for keyword in ["salad", "sushi", "cold", "gazpacho", "ice cream"]):
+        return min(35, name_hash + 15)  # Cold dishes: 20-35°C  
     elif any(keyword in meal_lower for keyword in ["cake", "pudding", "dessert", "cookies", "pastries"]):
-        return random.randint(10, 25)
+        return name_hash  # Desserts: variable 10-25°C
     else:
-        return random.randint(15, 25)
+        return min(25, max(15, name_hash))  # Most dishes: 15-25°C
 
 
 def main():

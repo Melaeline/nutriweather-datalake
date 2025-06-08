@@ -11,7 +11,7 @@ import glob
 import pandas as pd
 from datetime import datetime, timedelta
 import traceback
-import random
+import hashlib
 
 
 def get_latest_file(directory, pattern):
@@ -74,37 +74,65 @@ def generate_temperature_records(weather_data):
 
 
 def get_meal_advice(temperature):
-    """Get meal advice based on temperature."""
-    if temperature < 10:
+    """Get meal advice based on temperature - deterministic."""
+    if temperature < 5:
+        return "Extremely cold weather calls for hearty stews and hot beverages. Stay warm and nourished!"
+    elif temperature < 10:
         return "Perfect weather for hot soups and warm comfort food. Stay cozy!"
+    elif temperature < 15:
+        return "Cool weather ideal for warm meals and moderate cooking. Enjoy balanced nutrition!"
     elif temperature < 20:
         return "Great weather for hearty meals and moderate cooking. Enjoy balanced nutrition!"
-    elif temperature < 30:
+    elif temperature < 25:
         return "Pleasant weather for fresh salads and light cooking. Stay hydrated!"
+    elif temperature < 30:
+        return "Warm weather perfect for fresh dishes and minimal cooking. Keep cool!"
     else:
-        return "Hot weather calls for cold dishes and minimal cooking. Keep cool!"
+        return "Hot weather calls for cold dishes and minimal cooking. Stay refreshed!"
 
 
-def select_recommended_meal(meals_data, temperature):
-    """Select a meal recommendation based on temperature."""
+def get_temperature_category(temperature):
+    """Categorize temperature for meal selection."""
+    if temperature < 10:
+        return "cold"
+    elif temperature < 20:
+        return "moderate"
+    elif temperature < 30:
+        return "warm"
+    else:
+        return "hot"
+
+
+def select_recommended_meal(meals_data, temperature, date_str):
+    """Select a meal recommendation deterministically based on temperature and date."""
     if not meals_data:
         return None
     
-    # Filter meals based on temperature preference
-    if temperature < 10:
-        # Cold weather - prefer hot meals
-        preferred = [m for m in meals_data if m.get('temperature', 15) < 15]
-    elif temperature > 25:
-        # Hot weather - prefer cold meals
-        preferred = [m for m in meals_data if m.get('temperature', 15) > 20]
-    else:
-        # Moderate weather - any meal
-        preferred = meals_data
+    # Get temperature category
+    temp_category = get_temperature_category(temperature)
     
+    # Filter meals based on temperature preference
+    if temp_category == "cold":
+        # Cold weather - prefer hot meals (lower temperature meals)
+        preferred = [m for m in meals_data if m.get('temperature', 15) <= 15]
+    elif temp_category == "hot":
+        # Hot weather - prefer cold meals (higher temperature meals)
+        preferred = [m for m in meals_data if m.get('temperature', 15) >= 20]
+    else:
+        # Moderate/warm weather - prefer moderate temperature meals
+        preferred = [m for m in meals_data if 15 <= m.get('temperature', 15) <= 25]
+    
+    # If no preferred meals found, use all meals
     if not preferred:
         preferred = meals_data
     
-    return random.choice(preferred)
+    # Create deterministic selection using hash of date and temperature
+    selection_seed = f"{date_str}_{temp_category}_{int(temperature)}"
+    hash_value = int(hashlib.md5(selection_seed.encode()).hexdigest(), 16)
+    
+    # Select meal based on hash
+    selected_index = hash_value % len(preferred)
+    return preferred[selected_index]
 
 
 def generate_enhanced_records(weather_data, meals_data):
@@ -127,12 +155,16 @@ def generate_enhanced_records(weather_data, meals_data):
     if daily:
         uv_index = daily[0].get('uv_index_max')
     
-    # Select recommended meal
-    recommended_meal = select_recommended_meal(meals_data, current_temp)
+    # Get current date for deterministic selection
+    current_time = current.get('time', datetime.now().isoformat())
+    date_str = current_time.split('T')[0] if 'T' in current_time else current_time.split(' ')[0]
+    
+    # Select recommended meal deterministically
+    recommended_meal = select_recommended_meal(meals_data, current_temp, date_str)
     
     # Create enhanced record
     record = {
-        "@timestamp": current.get('time', datetime.now().isoformat()).replace(' UTC', ''),
+        "@timestamp": current_time.replace(' UTC', ''),
         "timezone": location.get('timezone', 'UTC'),
         "current_temperature": round(current_temp, 1),
         "relative_humidity": current.get('relative_humidity_2m'),
@@ -140,7 +172,8 @@ def generate_enhanced_records(weather_data, meals_data):
         "location": location.get('name', 'Unknown'),
         "latitude": location.get('coordinates', {}).get('latitude'),
         "longitude": location.get('coordinates', {}).get('longitude'),
-        "recommended_advice": get_meal_advice(current_temp)
+        "recommended_advice": get_meal_advice(current_temp),
+        "temperature_category": get_temperature_category(current_temp)
     }
     
     # Add UV index if available
