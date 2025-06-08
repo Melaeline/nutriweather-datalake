@@ -1,16 +1,17 @@
 """
-Merge Formatted Data Module
+Merge Formatted Data Module - Elasticsearch Compatible
 
-This module merges formatted meal and weather data to create analytical datasets.
-It combines the latest formatted meals (Parquet) with weather data (JSON).
+This module merges formatted meal and weather data to create clean, flat records
+optimized for Elasticsearch indexing and Kibana dashboarding.
 """
 
 import os
 import json
 import glob
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import traceback
+import random
 
 
 def get_latest_file(directory, pattern):
@@ -48,71 +49,154 @@ def load_latest_weather_data():
         return {}
 
 
-def merge_data(meals_data, weather_data):
-    """Merge meals and weather data into analytical format."""
-    merged_data = {
-        "pipeline_info": {
-            "merged_at": datetime.now().isoformat(),
-            "total_meals": len(meals_data),
-            "has_weather_data": bool(weather_data)
-        },
-        "weather": weather_data,
-        "meals": meals_data,
-        "analytics": {
-            "meal_categories": {},
-            "regions": {},
-            "temperature_ranges": {
-                "cold": [],  # meals with temp < 10
-                "warm": [],  # meals with temp 10-20
-                "hot": []    # meals with temp > 20
-            }
-        }
+def generate_temperature_records(weather_data):
+    """Generate simple temperature records for time-series analysis."""
+    records = []
+    
+    if not weather_data.get('hourly'):
+        return records
+    
+    location = weather_data.get('location', {})
+    timezone = location.get('timezone', 'UTC')
+    
+    for hourly_record in weather_data['hourly']:
+        if hourly_record.get('temperature_2m') is not None:
+            records.append({
+                "@timestamp": hourly_record['date'].replace(' UTC', ''),
+                "temperature": round(hourly_record['temperature_2m'], 1),
+                "timezone": timezone,
+                "location": location.get('name', 'Unknown'),
+                "latitude": location.get('coordinates', {}).get('latitude'),
+                "longitude": location.get('coordinates', {}).get('longitude')
+            })
+    
+    return records
+
+
+def get_meal_advice(temperature):
+    """Get meal advice based on temperature."""
+    if temperature < 10:
+        return "Perfect weather for hot soups and warm comfort food. Stay cozy!"
+    elif temperature < 20:
+        return "Great weather for hearty meals and moderate cooking. Enjoy balanced nutrition!"
+    elif temperature < 30:
+        return "Pleasant weather for fresh salads and light cooking. Stay hydrated!"
+    else:
+        return "Hot weather calls for cold dishes and minimal cooking. Keep cool!"
+
+
+def select_recommended_meal(meals_data, temperature):
+    """Select a meal recommendation based on temperature."""
+    if not meals_data:
+        return None
+    
+    # Filter meals based on temperature preference
+    if temperature < 10:
+        # Cold weather - prefer hot meals
+        preferred = [m for m in meals_data if m.get('temperature', 15) < 15]
+    elif temperature > 25:
+        # Hot weather - prefer cold meals
+        preferred = [m for m in meals_data if m.get('temperature', 15) > 20]
+    else:
+        # Moderate weather - any meal
+        preferred = meals_data
+    
+    if not preferred:
+        preferred = meals_data
+    
+    return random.choice(preferred)
+
+
+def generate_enhanced_records(weather_data, meals_data):
+    """Generate enhanced records with meal recommendations."""
+    records = []
+    
+    if not weather_data.get('current'):
+        return records
+    
+    current = weather_data['current']
+    location = weather_data.get('location', {})
+    daily = weather_data.get('daily', [])
+    
+    current_temp = current.get('temperature_2m')
+    if current_temp is None:
+        return records
+    
+    # Get UV index from daily data
+    uv_index = None
+    if daily:
+        uv_index = daily[0].get('uv_index_max')
+    
+    # Select recommended meal
+    recommended_meal = select_recommended_meal(meals_data, current_temp)
+    
+    # Create enhanced record
+    record = {
+        "@timestamp": current.get('time', datetime.now().isoformat()).replace(' UTC', ''),
+        "timezone": location.get('timezone', 'UTC'),
+        "current_temperature": round(current_temp, 1),
+        "relative_humidity": current.get('relative_humidity_2m'),
+        "wind_speed": current.get('wind_speed_10m'),
+        "location": location.get('name', 'Unknown'),
+        "latitude": location.get('coordinates', {}).get('latitude'),
+        "longitude": location.get('coordinates', {}).get('longitude'),
+        "recommended_advice": get_meal_advice(current_temp)
     }
     
-    # Generate analytics
-    if meals_data:
-        # Count by category
-        for meal in meals_data:
-            category = meal.get('category', 'Unknown')
-            merged_data["analytics"]["meal_categories"][category] = \
-                merged_data["analytics"]["meal_categories"].get(category, 0) + 1
-            
-            # Count by region
-            region = meal.get('region', 'Unknown')
-            merged_data["analytics"]["regions"][region] = \
-                merged_data["analytics"]["regions"].get(region, 0) + 1
-            
-            # Temperature categorization
-            temp = meal.get('temperature', 15)
-            if temp < 10:
-                merged_data["analytics"]["temperature_ranges"]["cold"].append(meal.get('meal_name', ''))
-            elif temp <= 20:
-                merged_data["analytics"]["temperature_ranges"]["warm"].append(meal.get('meal_name', ''))
-            else:
-                merged_data["analytics"]["temperature_ranges"]["hot"].append(meal.get('meal_name', ''))
+    # Add UV index if available
+    if uv_index is not None:
+        record["uv_index_max"] = round(uv_index, 1)
     
-    return merged_data
+    # Add meal recommendation if available
+    if recommended_meal:
+        record.update({
+            "suggested_meal": recommended_meal.get('meal_name'),
+            "preparation_time": f"{recommended_meal.get('preparation_time', 30)} minutes",
+            "instructions": recommended_meal.get('instructions', '').replace(';', '. ')[:200] + "...",
+            "ingredients": recommended_meal.get('ingredients', '').replace(';', ', ')[:150] + "...",
+            "meal_category": recommended_meal.get('category'),
+            "meal_region": recommended_meal.get('region')
+        })
+    
+    records.append(record)
+    return records
 
 
-def save_merged_data(merged_data):
-    """Save merged data to usage directory."""
+def save_elasticsearch_records(temperature_records, enhanced_records):
+    """Save records in Elasticsearch-compatible format."""
     usage_dir = "/usr/local/airflow/include/usage"
     os.makedirs(usage_dir, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"merged_data_{timestamp}.json"
-    filepath = os.path.join(usage_dir, filename)
     
-    with open(filepath, 'w') as f:
-        json.dump(merged_data, f, indent=2, default=str)
+    # Save temperature records (for time-series analysis)
+    temp_filename = f"temperature_timeseries_{timestamp}.jsonl"
+    temp_filepath = os.path.join(usage_dir, temp_filename)
     
-    print(f"Merged data saved to: {filepath}")
-    return filepath
+    with open(temp_filepath, 'w') as f:
+        for record in temperature_records:
+            f.write(json.dumps(record) + '\n')
+    
+    print(f"Temperature records saved to: {temp_filepath}")
+    print(f"Total temperature records: {len(temperature_records)}")
+    
+    # Save enhanced records (for dashboarding)
+    enhanced_filename = f"enhanced_recommendations_{timestamp}.jsonl"
+    enhanced_filepath = os.path.join(usage_dir, enhanced_filename)
+    
+    with open(enhanced_filepath, 'w') as f:
+        for record in enhanced_records:
+            f.write(json.dumps(record) + '\n')
+    
+    print(f"Enhanced records saved to: {enhanced_filepath}")
+    print(f"Total enhanced records: {len(enhanced_records)}")
+    
+    return temp_filepath, enhanced_filepath
 
 
 def main():
     """Main execution function."""
-    print("=== Starting Data Merge Process ===")
+    print("=== Starting Elasticsearch-Compatible Data Merge ===")
     
     try:
         # Load data
@@ -122,14 +206,16 @@ def main():
         print(f"Loaded {len(meals_data)} meals")
         print(f"Weather data available: {bool(weather_data)}")
         
-        # Merge data
-        merged_data = merge_data(meals_data, weather_data)
+        # Generate records
+        temperature_records = generate_temperature_records(weather_data)
+        enhanced_records = generate_enhanced_records(weather_data, meals_data)
         
-        # Save merged data
-        output_file = save_merged_data(merged_data)
+        # Save records
+        temp_file, enhanced_file = save_elasticsearch_records(temperature_records, enhanced_records)
         
         print("=== Data Merge Completed Successfully ===")
-        print(f"Output file: {output_file}")
+        print(f"Temperature file: {temp_file}")
+        print(f"Enhanced file: {enhanced_file}")
         
     except Exception as e:
         print(f"Error in data merge process: {e}")

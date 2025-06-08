@@ -159,6 +159,26 @@ nutriweather-datalake/
 
 ---
 
+## 📊 Data Schema
+
+### Temperature Time-Series Records (JSONL)
+
+For time-series analysis and temperature trends:
+
+```json
+{"@timestamp": "2024-01-01 01:00:00", "temperature": 22.3, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.85, "longitude": 2.35}
+```
+
+### Enhanced Recommendation Records (JSONL)
+
+For dashboarding and meal recommendations:
+
+```json
+{"@timestamp": "2024-01-01 03:45:12", "timezone": "Europe/Paris", "current_temperature": 25.1, "uv_index_max": 7.0, "relative_humidity": 58.0, "wind_speed": 17.6, "suggested_meal": "Lasagna", "preparation_time": "45 minutes", "instructions": "Preheat oven to 180°C. Cook the meat and onions...", "ingredients": "Ground beef, onions, tomato sauce...", "recommended_advice": "Great weather for hearty meals and moderate cooking. Enjoy balanced nutrition!"}
+```
+
+---
+
 ## 🗄️ Data Storage
 
 - **Raw Data**: `include/raw/`
@@ -167,72 +187,31 @@ nutriweather-datalake/
 - **Formatted Data**: `include/formatted/`
   - Meals: Parquet files (columnar, efficient for analytics)
   - Weather: JSON files (structured, time-series)
-- **Merged/Usage Data**: `include/usage/`
-  - Final merged recommendations and analytics datasets (JSON)
+- **Usage Data**: `include/usage/`
+  - Temperature time-series: JSONL files for Elasticsearch indexing
+  - Enhanced recommendations: JSONL files for Kibana dashboarding
 
 ---
 
-## 🧑‍💻 Technologies in Detail
+## 📊 Elasticsearch Integration
 
-### Apache Airflow
+The pipeline produces two types of records optimized for Elasticsearch:
 
-- **Purpose**: Orchestrates all ETL steps as DAGs.
-- **Configuration**: DAGs defined in `dags/`, scripts in `include/scripts/`.
-- **Scheduling**: Manual or scheduled via Airflow UI/CLI.
-- **Monitoring**: Airflow UI provides DAG run status, logs, and task details.
+### Temperature Index (`nutriweather_temperature`)
+- Time-series temperature data
+- Optimized for trend analysis and monitoring
+- Fields: `@timestamp`, `temperature`, `timezone`, `location`, `latitude`, `longitude`
 
-### Apache Spark
+### Enhanced Index (`nutriweather_enhanced`)
+- Complete weather + meal recommendations
+- Optimized for dashboarding and insights
+- Fields: All weather data + meal recommendations + advice
 
-- **Purpose**: High-performance ETL, data transformation, Parquet/JSON handling.
-- **Usage**: All heavy data processing (formatting, merging) is done via PySpark scripts.
-- **Configuration**: Spark session is created in each script; can be run locally or on a cluster.
-
-### Python & Libraries
-
-- **pandas**: Used for lightweight data manipulation (weather formatting).
-- **requests/openmeteo-requests**: API calls for data ingestion.
-- **pyarrow**: Parquet file handling.
-- **numpy**: Numeric operations.
-- **requests-cache/retry-requests**: Robust, cached API calls.
-
-### Data Formats
-
-- **JSON**: Used for raw and merged data, and for weather data.
-- **Parquet**: Used for formatted meal data (efficient for analytics).
-
----
-
-## 📊 Data Schema
-
-### Meal Data (Parquet)
-
-- `meal_id`: Unique identifier
-- `meal_name`: Recipe name
-- `category`: Food category
-- `region`: Cuisine origin
-- `ingredients`: List of ingredients with quantities
-- `instructions`: Cooking steps (cleaned, structured)
-- `preparation_time`: Estimated cooking time (minutes)
-- `temperature`: Recommended serving temperature (°C)
-- `tags`: Recipe tags
-- `image_url`, `youtube_url`, `source_url`: Media links
-
-### Weather Data (JSON)
-
-- `location`: Name, coordinates, elevation, timezone
-- `current`: Temperature, humidity, wind speed, timestamp
-- `hourly`: List of hourly temperature records (24h)
-- `daily`: List of daily UV index records
-
-### Merged Data (JSON)
-
-- `weather_location`: Weather context
-- `current_weather`: Snapshot at merge time
-- `hourly_weather_data`: 24-hour temperature history
-- `daily_weather_summary`: UV index summary
-- `recommended_meal`: Best-matched meal for current weather
-- `recommended_advice`: Contextual advice based on temperature
-- `merge_metadata`: Timestamps, counts, method
+### Kibana Dashboards
+- **Temperature Trends**: Time-series visualizations
+- **Meal Recommendations**: Current conditions and suggestions
+- **Geographic Analysis**: Location-based weather patterns
+- **Nutritional Insights**: Meal category and region analysis
 
 ---
 

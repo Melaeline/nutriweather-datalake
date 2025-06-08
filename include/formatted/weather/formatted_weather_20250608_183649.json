@@ -10,10 +10,10 @@
     "utc_offset_hours": 2
   },
   "current": {
-    "temperature_2m": 19.6,
-    "relative_humidity_2m": 39.0,
-    "wind_speed_10m": 12.0,
-    "time": "2025-06-08 16:45:00 UTC"
+    "temperature_2m": 18.6,
+    "relative_humidity_2m": 42.0,
+    "wind_speed_10m": 8.7,
+    "time": "2025-06-08 18:30:00 UTC"
   },
   "hourly": [
     {
