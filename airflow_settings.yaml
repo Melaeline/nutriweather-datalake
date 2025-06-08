@@ -11,20 +11,15 @@ airflow:
           conn_type: elasticsearch
           conn_host: es01
           conn_port: 9200
-          conn_schema: https
-          conn_login: elastic
-          conn_password: elastic
-          conn_extra:
-              verify_ssl: false
-              verify_certs: false
+          conn_schema: http
         - conn_id: kibana_default
+          conn_type: http
+          conn_host: kibana
+          conn_port: 5601
+          conn_schema: http
     pools: []
     variables:
         - key: ELASTICSEARCH_HOST
-          value: "https://es01:9200"
-        - key: ELASTICSEARCH_USERNAME
-          value: "elastic"
-        - key: ELASTICSEARCH_PASSWORD
-          value: "elastic"
+          value: "http://es01:9200"
         - key: KIBANA_HOST
-          value: "https://kibana:5601"
+          value: "http://kibana:5601"
