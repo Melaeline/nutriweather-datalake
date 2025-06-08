@@ -109,4 +109,4 @@ volumes:
 
 networks:
   airflow:
-    external: true
+    # external: true

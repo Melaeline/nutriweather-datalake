@@ -10,10 +10,10 @@
     "utc_offset_hours": 2
   },
   "current": {
-    "temperature_2m": 18.9,
-    "relative_humidity_2m": 42.0,
-    "wind_speed_10m": 15.5,
-    "time": "2025-06-08 12:45:00 UTC"
+    "temperature_2m": 19.6,
+    "relative_humidity_2m": 39.0,
+    "wind_speed_10m": 12.4,
+    "time": "2025-06-08 16:30:00 UTC"
   },
   "hourly": [
     {
@@ -74,43 +74,43 @@
     },
     {
       "date": "2025-06-08 12:00:00 UTC",
-      "temperature_2m": 18.3
+      "temperature_2m": 18.4
     },
     {
       "date": "2025-06-08 13:00:00 UTC",
-      "temperature_2m": 19.0
+      "temperature_2m": 18.8
     },
     {
       "date": "2025-06-08 14:00:00 UTC",
-      "temperature_2m": 19.2
+      "temperature_2m": 19.6
     },
     {
       "date": "2025-06-08 15:00:00 UTC",
-      "temperature_2m": 19.8
-    },
-    {
-      "date": "2025-06-08 16:00:00 UTC",
       "temperature_2m": 19.9
     },
     {
+      "date": "2025-06-08 16:00:00 UTC",
+      "temperature_2m": 19.8
+    },
+    {
       "date": "2025-06-08 17:00:00 UTC",
-      "temperature_2m": 19.2
+      "temperature_2m": 19.6
     },
     {
       "date": "2025-06-08 18:00:00 UTC",
-      "temperature_2m": 18.6
+      "temperature_2m": 19.0
     },
     {
       "date": "2025-06-08 19:00:00 UTC",
-      "temperature_2m": 17.8
+      "temperature_2m": 18.3
     },
     {
       "date": "2025-06-08 20:00:00 UTC",
-      "temperature_2m": 16.8
+      "temperature_2m": 17.5
     },
     {
       "date": "2025-06-08 21:00:00 UTC",
-      "temperature_2m": 16.0
+      "temperature_2m": 16.3
     }
   ],
   "daily": [
