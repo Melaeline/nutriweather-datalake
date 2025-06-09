@@ -25,5 +25,8 @@ elasticsearch==8.13.0
 elastic-transport==8.13.0 
 certifi
 
+# HDFS integration
+hdfs==2.7.0
+
 # Spark utilities
 # (spark_utils.py is included in scripts directory)

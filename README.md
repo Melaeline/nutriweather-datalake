@@ -1,6 +1,6 @@
 # NutriWeather Data Lake
 
-A comprehensive data engineering project that combines weather data with meal recommendations using Apache Airflow, Apache Spark, and Elasticsearch. This pipeline fetches real-time weather data and meal information, processes them through multiple stages, and provides intelligent meal recommendations based on current weather conditions.
+A comprehensive data engineering project that combines weather data with meal recommendations using Apache Airflow, Apache Spark, Elasticsearch, and HDFS. This pipeline fetches real-time weather data and meal information, processes them through multiple stages, and provides intelligent meal recommendations based on current weather conditions.
 
 ## 🏗️ Architecture Overview
 
@@ -9,10 +9,11 @@ A comprehensive data engineering project that combines weather data with meal re
 │   Data Sources  │    │   Processing    │    │    Storage &    │
 │                 │    │    Pipeline     │    │  Visualization  │
 ├─────────────────┤    ├─────────────────┤    ├─────────────────┤
-│ Open-Meteo API │────▶│ Apache Airflow  │────▶│ Elasticsearch   │
-│ TheMealDB API   │    │ Apache Spark    │    │ Kibana          │
-│ OSM Nominatim   │    │ PySpark         │    │ JSONL Files     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+│ Open-Meteo API │────▶│ Apache Airflow  │────▶│ HDFS Cluster    │
+│ TheMealDB API   │    │ Apache Spark    │    │ Elasticsearch   │
+│ OSM Nominatim   │    │ PySpark         │    │ Kibana          │
+└─────────────────┘    └─────────────────┘    │ Local Files     │
+                                              └─────────────────┘
 ```
 
 ## 🛠️ Technology Stack
@@ -21,6 +22,7 @@ A comprehensive data engineering project that combines weather data with meal re
 - **Apache Airflow 2.9.2** - Workflow orchestration and scheduling
 - **Apache Spark 3.5.6** - Distributed data processing
 - **PySpark** - Python API for Spark
+- **Apache Hadoop HDFS 3.3.5** - Distributed file storage
 - **Elasticsearch 8.15.0** - Search and analytics engine
 - **Kibana 8.15.0** - Data visualization and exploration
 - **Docker & Docker Compose** - Containerization and orchestration
@@ -28,8 +30,9 @@ A comprehensive data engineering project that combines weather data with meal re
 ### Development & Runtime
 - **Astronomer Runtime 3.0-2** - Airflow distribution
 - **Python 3.11+** - Primary programming language
-- **OpenJDK 17** - Java runtime for Spark
+- **OpenJDK 17** - Java runtime for Spark and Hadoop
 - **Bitnami Spark Images** - Pre-configured Spark containers
+- **Apache Hadoop Official Images** - HDFS cluster components
 
 ### Data Processing Libraries
 - **pandas 1.5.0+** - Data manipulation and analysis
@@ -37,6 +40,7 @@ A comprehensive data engineering project that combines weather data with meal re
 - **numpy 1.26.0+** - Numerical computing
 - **requests 2.31.0+ (< 2.33.0)** - HTTP client library (version-pinned for urllib3 compatibility)
 - **urllib3 1.26.0+ (< 2.3.0)** - HTTP library (compatible with requests)
+- **hdfs 2.7.0** - Python HDFS client for distributed file operations
 
 ### API Integration
 - **openmeteo-requests 1.1.0+** - Weather API client
@@ -78,18 +82,23 @@ A comprehensive data engineering project that combines weather data with meal re
 ### Stage 1: Data Ingestion (Raw Layer)
 ```
 fetch_meals_data() → /include/raw/meals/raw_meals_YYYYMMDD_HHMMSS.json
+                  → HDFS: /nutriweather/raw/meals/
 fetch_weather_data() → /include/raw/weather/raw_weather_YYYYMMDD_HHMMSS.json
+                    → HDFS: /nutriweather/raw/weather/
 ```
 
 **Raw Data Structures:**
 - **Meals**: Complete TheMealDB API response with 50+ fields per meal
 - **Weather**: Structured JSON with metadata, current, hourly, and daily sections
-- **Retention**: All raw files preserved for reprocessing
+- **Retention**: All raw files preserved locally and in HDFS for reprocessing
+- **HDFS Storage**: Distributed storage with 2x replication for fault tolerance
 
 ### Stage 2: Data Transformation (Formatted Layer)
 ```
 format_meals.py → /include/formatted/meals/formatted_meals_YYYYMMDD_HHMMSS.parquet
+              → HDFS: /nutriweather/formatted/meals/
 format_weather.py → /include/formatted/weather/formatted_weather_YYYYMMDD_HHMMSS.json
+                 → HDFS: /nutriweather/formatted/weather/
 ```
 
 **Transformations Applied:**
@@ -99,20 +108,25 @@ format_weather.py → /include/formatted/weather/formatted_weather_YYYYMMDD_HHMM
   - Instruction cleaning and formatting
   - Category and region standardization
   - Clean single-file Parquet output (no Spark artifacts)
+  - **HDFS Integration**: Automatic backup to distributed storage
 - **Weather Processing**:
   - Location name enrichment via reverse geocoding
   - Timestamp standardization (ISO 8601)
   - Data validation and type conversion
+  - **HDFS Archival**: Long-term storage for historical analysis
 
 **File Architecture:**
-- **Clean Output**: Single parquet files without `_SUCCESS` or partition artifacts
-- **Temporary Processing**: Spark artifacts handled internally and cleaned up
+- **Local Output**: Single parquet files without `_SUCCESS` or partition artifacts
+- **HDFS Mirror**: Distributed copies for high availability
 - **Consistent Naming**: `formatted_meals_YYYYMMDD_HHMMSS.parquet` format
+- **Cross-Platform Access**: Available via local filesystem and HDFS API
 
 ### Stage 3: Data Integration (Usage Layer)
 ```
 merge_formatted.py → /include/usage/temperature_timeseries_YYYYMMDD_HHMMSS.jsonl
                   → /include/usage/enhanced_recommendations_YYYYMMDD_HHMMSS.jsonl
+                  → HDFS: /nutriweather/usage/timeseries/
+                  → HDFS: /nutriweather/usage/recommendations/
 ```
 
 **Output Formats:**
@@ -145,13 +159,14 @@ merge_formatted.py → /include/usage/temperature_timeseries_YYYYMMDD_HHMMSS.jso
 index_elasticsearch.py → Elasticsearch indices:
                        → nutriweather_temperature
                        → nutriweather_enhanced
+                       → HDFS: /nutriweather/indexed/ (metadata)
 ```
 
 ## 🗂️ File Formats & Data Organization
 
 ### Directory Structure
 ```
-/usr/local/airflow/include/
+Local Storage (/usr/local/airflow/include/):
 ├── raw/
 │   ├── meals/           # JSON files from TheMealDB API
 │   └── weather/         # JSON files from Open-Meteo API
@@ -160,7 +175,26 @@ index_elasticsearch.py → Elasticsearch indices:
 │   └── weather/         # JSON files (enriched with location data)
 ├── usage/               # JSONL files (Elasticsearch-ready)
 └── scripts/             # Python processing modules
+
+HDFS Storage (/nutriweather/):
+├── raw/
+│   ├── meals/           # Archived raw meal data
+│   └── weather/         # Archived raw weather data
+├── formatted/
+│   ├── meals/           # Processed parquet files
+│   └── weather/         # Enhanced weather JSON files
+├── usage/
+│   ├── timeseries/      # Temperature time series data
+│   └── recommendations/ # Enhanced meal recommendations
+└── indexed/             # Elasticsearch indexing metadata
 ```
+
+### HDFS Integration Benefits
+- **Fault Tolerance**: 2x replication across DataNodes
+- **Scalability**: Horizontal scaling for large datasets
+- **Historical Storage**: Long-term archival of all pipeline outputs
+- **Cross-Platform Access**: Available to Spark, Python, and external tools
+- **Backup Strategy**: Automatic distributed backup for critical data
 
 ### File Naming Convention
 - **Pattern**: `{type}_{category}_{YYYYMMDD_HHMMSS}.{extension}`
@@ -241,18 +275,25 @@ Services:
 ├── Elasticsearch        # Search and analytics (localhost:9200)
 ├── Kibana              # Visualization dashboard (localhost:5601)
 ├── Spark Master        # Cluster coordination (localhost:8082)
-└── Spark Worker        # Distributed computing (2GB memory)
+├── Spark Worker        # Distributed computing (2GB memory)
+├── HDFS NameNode       # HDFS metadata management (localhost:9870)
+├── HDFS DataNode 1     # Distributed storage node 1
+└── HDFS DataNode 2     # Distributed storage node 2
 ```
 
 ### Volume Mappings
 - **Airflow**: `/usr/local/airflow/include` → Local `./include`
 - **Spark**: `/opt/spark-apps` → Local `./apps`
 - **Elasticsearch**: Persistent data volumes for index storage
+- **HDFS NameNode**: `namenode-data` volume for metadata
+- **HDFS DataNodes**: `datanode1-data`, `datanode2-data` volumes for block storage
+- **HDFS Config**: `./hdfs_config` → Container `/opt/hadoop/etc/hadoop`
 
 ### Network Configuration
 - **Internal Network**: `airflow` (Docker Compose network)
 - **Service Discovery**: Container name-based DNS resolution
-- **Port Exposure**: Only web interfaces exposed to host
+- **Port Exposure**: Web interfaces and APIs exposed to host
+- **HDFS Access**: NameNode API (8020) and Web UI (9870) available externally
 
 ## 🔧 Development Setup
 
@@ -268,10 +309,13 @@ Services:
 git clone <repository-url>
 cd nutriweather-datalake
 
-# Start all services
+# Create HDFS configuration directory
+mkdir -p hdfs_config scripts
+
+# Start all services (including HDFS cluster)
 docker-compose up -d
 
-# Monitor logs
+# Monitor logs (including HDFS services)
 docker-compose logs -f
 
 # Access services
@@ -279,6 +323,7 @@ docker-compose logs -f
 # Kibana: http://localhost:5601
 # Spark UI: http://localhost:8082
 # Elasticsearch: http://localhost:9200
+# HDFS Web UI: http://localhost:9870
 ```
 
 ### Astro CLI Integration
@@ -313,38 +358,43 @@ astro deploy
 - **Index Statistics**: `GET /_stats`
 - **Document Counts**: Real-time via Kibana dashboards
 
-## 🔍 Data Analysis & Visualization
+### HDFS Cluster Health
+- **NameNode Web UI**: `http://localhost:9870` - Cluster overview, DataNode status
+- **Filesystem Health**: `GET /webhdfs/v1/?op=GETFILESTATUS`
+- **Block Reports**: DataNode health and storage utilization
+- **Replication Status**: File replication factor and under-replicated blocks
 
-### Kibana Dashboards
-1. **Temperature Trends**: Time-series visualization of temperature data
-2. **Meal Recommendations**: Distribution of suggested meals by weather
-3. **Location Analytics**: Geographic distribution of weather data
-4. **System Health**: Pipeline execution metrics and error rates
+## 🔧 HDFS Integration Examples
 
-### Sample Queries
-```javascript
-// Find meals recommended for cold weather
-GET nutriweather_enhanced/_search
-{
-  "query": {
-    "range": {
-      "current_temperature": { "lt": 10 }
-    }
-  }
-}
+### Python HDFS Client Usage
+```python
+from hdfs import InsecureClient
 
-// Temperature trends for last 24 hours
-GET nutriweather_temperature/_search
-{
-  "query": {
-    "range": {
-      "@timestamp": {
-        "gte": "now-24h"
-      }
-    }
-  },
-  "sort": [{ "@timestamp": "desc" }]
-}
+# Connect to HDFS cluster
+client = InsecureClient('http://namenode:9870', user='root')
+
+# Write processed data to HDFS
+with client.write('/nutriweather/formatted/meals/latest.parquet') as writer:
+    # Write Parquet data from local processing
+
+# Read historical data from HDFS
+with client.read('/nutriweather/raw/weather/archive.json') as reader:
+    historical_data = reader.read()
+
+# List pipeline outputs
+files = client.list('/nutriweather/usage/')
+
+# Create directory structure
+client.makedirs('/nutriweather/analytics/')
+```
+
+### Spark-HDFS Integration
+```python
+# Read from HDFS in Spark jobs
+df = spark.read.parquet("hdfs://namenode:8020/nutriweather/formatted/meals/")
+
+# Write Spark DataFrame to HDFS
+df.write.mode("append").parquet("hdfs://namenode:8020/nutriweather/processed/")
 ```
 
 ## 🚨 Error Handling & Recovery
@@ -364,10 +414,17 @@ GET nutriweather_temperature/_search
 - **Null Checks**: Required field validation before processing
 - **API Response Validation**: HTTP status and content verification
 
+### HDFS Fault Tolerance
+- **DataNode Failure**: Automatic block replication to healthy nodes
+- **NameNode Recovery**: Metadata checkpoint and journal recovery
+- **Network Partitions**: Client retry with exponential backoff
+- **Storage Full**: Automatic load balancing across DataNodes
+
 ### Monitoring Alerts
 - **Failed Tasks**: Immediate notification via Airflow
 - **Service Health**: Docker container health checks
 - **Data Quality**: Custom validation rules in processing scripts
+- **HDFS Health**: NameNode and DataNode availability monitoring
 
 ## 🎯 Use Cases & Applications
 
@@ -414,42 +471,13 @@ ELASTICSEARCH_HOSTS: http://es01:9200
 - **Real-time Streaming**: Apache Kafka for live weather updates
 - **Geographic Expansion**: Multi-city weather and regional cuisine
 - **Mobile API**: REST API for mobile application integration
+- **HDFS Analytics**: Historical trend analysis on distributed data
 
 ### Scalability Improvements
 - **Spark Cluster Expansion**: Multi-worker Spark setup
 - **Elasticsearch Clustering**: Multi-node ES cluster
 - **Airflow Scaling**: Kubernetes deployment with auto-scaling
 - **Data Partitioning**: Date-based partitioning for large datasets
+- **HDFS Scaling**: Additional DataNodes for increased storage capacity
 
-## 📚 Additional Resources
-
-### Documentation Links
-- [Apache Airflow Documentation](https://airflow.apache.org/docs/)
-- [Apache Spark Programming Guide](https://spark.apache.org/docs/latest/programming-guide.html)
-- [Elasticsearch Reference](https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html)
-- [Astronomer Documentation](https://docs.astronomer.io/)
-
-### API Documentation
-- [Open-Meteo API](https://open-meteo.com/en/docs)
-- [TheMealDB API](https://www.themealdb.com/api.php)
-- [Nominatim API](https://nominatim.org/release-docs/latest/api/Overview/)
-
-## 🤝 Contributing
-
-### Development Workflow
-1. Fork repository and create feature branch
-2. Implement changes with comprehensive testing
-3. Update documentation and README
-4. Submit pull request with detailed description
-
-### Code Standards
-- **Python**: PEP 8 compliance with black formatting
-- **Spark**: Efficient DataFrame operations, avoid collect()
-- **Documentation**: Comprehensive docstrings and comments
-- **Testing**: Unit tests for critical processing functions
-
----
-
-**Project Maintainer**: NutriWeather Team  
-**Last Updated**: December 2024  
-**License**: MIT License
+...

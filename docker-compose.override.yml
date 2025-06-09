@@ -98,6 +98,82 @@ services:
     networks:
       - airflow
 
+  # HDFS NameNode
+  namenode:
+    image: apache/hadoop:3.3.5
+    container_name: namenode
+    hostname: namenode
+    user: root
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_HEAPSIZE=1024
+      - HADOOP_NAMENODE_OPTS="-Xmx1g"
+    volumes:
+      - namenode-data:/opt/hadoop/data/nameNode
+      - ./hdfs_config:/opt/hadoop/etc/hadoop
+      - ./scripts/start-hdfs.sh:/start-hdfs.sh
+      - ./include:/usr/local/airflow/include
+    ports:
+      - "9870:9870"  # HDFS Web UI
+      - "8020:8020"  # HDFS API
+    command: ["/bin/bash", "/start-hdfs.sh"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9870"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    mem_limit: 2g
+    restart: unless-stopped
+    networks:
+      - airflow
+
+  # HDFS DataNode 1
+  datanode1:
+    image: apache/hadoop:3.3.5
+    container_name: datanode1
+    hostname: datanode1
+    user: root
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_HEAPSIZE=512
+    volumes:
+      - datanode1-data:/opt/hadoop/data/dataNode
+      - ./hdfs_config:/opt/hadoop/etc/hadoop
+      - ./scripts/init-datanode.sh:/init-datanode.sh
+      - ./include:/usr/local/airflow/include
+    depends_on:
+      namenode:
+        condition: service_healthy
+    command: ["/bin/bash", "/init-datanode.sh"]
+    mem_limit: 1g
+    restart: unless-stopped
+    networks:
+      - airflow
+
+  # HDFS DataNode 2
+  datanode2:
+    image: apache/hadoop:3.3.5
+    container_name: datanode2
+    hostname: datanode2
+    user: root
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - HADOOP_HEAPSIZE=512
+    volumes:
+      - datanode2-data:/opt/hadoop/data/dataNode
+      - ./hdfs_config:/opt/hadoop/etc/hadoop
+      - ./scripts/init-datanode.sh:/init-datanode.sh
+      - ./include:/usr/local/airflow/include
+    depends_on:
+      namenode:
+        condition: service_healthy
+    command: ["/bin/bash", "/init-datanode.sh"]
+    mem_limit: 1g
+    restart: unless-stopped
+    networks:
+      - airflow
+
 volumes:
   # Elastic Stack volumes
   esdata01:
@@ -106,6 +182,13 @@ volumes:
     driver: local
   # Spark volume
   spark-data:
+  # HDFS volumes
+  namenode-data:
+    driver: local
+  datanode1-data:
+    driver: local
+  datanode2-data:
+    driver: local
 
 networks:
   airflow:
