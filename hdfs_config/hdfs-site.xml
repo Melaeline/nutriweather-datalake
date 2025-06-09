@@ -11,4 +11,16 @@
     <name>dfs.datanode.data.dir</name>
     <value>file:///opt/hadoop/data/dataNode</value>
   </property>
+  <property>
+    <name>dfs.webhdfs.enabled</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>dfs.permissions.enabled</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>dfs.namenode.safemode.threshold-pct</name>
+    <value>0.9f</value>
+  </property>
 </configuration>

@@ -49,18 +49,23 @@ def main():
         output_dir = "/usr/local/airflow/include/raw/meals"
         ensure_directory(output_dir)
         
-        # Save raw meals data
+        # Save raw meals data with HDFS backup
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file = f"{output_dir}/raw_meals_{timestamp}.json"
         
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump({
+        # Use the new save_with_hdfs_backup function
+        from spark_utils import save_with_hdfs_backup
+        save_with_hdfs_backup(
+            output_file,
+            {
                 "total_meals": len(meals_data),
                 "fetch_timestamp": timestamp,
                 "meals": meals_data
-            }, f, indent=2)
+            },
+            "json"
+        )
         
-        print(f"Raw meals saved to: {output_file}")
+        print(f"Raw meals saved locally and backed up to HDFS: {output_file}")
         
         # Create Spark DataFrame for validation
         df = spark.createDataFrame([{"meals": meals_data}])

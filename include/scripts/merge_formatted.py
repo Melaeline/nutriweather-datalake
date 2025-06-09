@@ -169,11 +169,15 @@ def create_enhanced_records(weather_data, meals_data, advice_data):
 
 
 def save_records(temp_records, enhanced_records):
-    """Save records in JSONL format for Elasticsearch."""
+    """Save records in JSONL format for Elasticsearch with HDFS backup."""
     output_dir = "/usr/local/airflow/include/usage"
     ensure_directory(output_dir)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Get HDFS client once for both operations
+    from spark_utils import get_hdfs_client, backup_to_hdfs
+    hdfs_client = get_hdfs_client()
     
     # Save temperature records
     temp_file = f"{output_dir}/temperature_timeseries_{timestamp}.jsonl"
@@ -181,11 +185,21 @@ def save_records(temp_records, enhanced_records):
         for record in temp_records:
             f.write(json.dumps(record) + '\n')
     
+    # Backup temperature records to HDFS
+    backup_to_hdfs(temp_file, "/nutriweather/usage/timeseries", hdfs_client)
+    
     # Save enhanced records
     enhanced_file = f"{output_dir}/enhanced_recommendations_{timestamp}.jsonl"
     with open(enhanced_file, 'w') as f:
         for record in enhanced_records:
             f.write(json.dumps(record) + '\n')
+    
+    # Backup enhanced records to HDFS
+    backup_to_hdfs(enhanced_file, "/nutriweather/usage/recommendations", hdfs_client)
+    
+    print(f"Files saved locally and backed up to HDFS:")
+    print(f"  Temperature: {temp_file}")
+    print(f"  Enhanced: {enhanced_file}")
     
     return temp_file, enhanced_file
 
@@ -209,12 +223,12 @@ def main():
         temp_records = create_temperature_records(weather_data)
         enhanced_records = create_enhanced_records(weather_data, meals_data, advice_data)
         
-        # Save records
+        # Save records with HDFS backup
         temp_file, enhanced_file = save_records(temp_records, enhanced_records)
         
-        print(f"Temperature records: {len(temp_records)} -> {temp_file}")
-        print(f"Enhanced records: {len(enhanced_records)} -> {enhanced_file}")
-        print("Data merge completed successfully!")
+        print(f"Temperature records: {len(temp_records)}")
+        print(f"Enhanced records: {len(enhanced_records)}")
+        print("Data merge completed successfully with HDFS backup!")
         
     except Exception as e:
         print(f"Error in merge process: {e}")

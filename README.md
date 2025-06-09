@@ -77,7 +77,7 @@ A comprehensive data engineering project that combines weather data with meal re
 - **Usage**: Convert coordinates to human-readable locations
 - **Rate Limits**: 1 request per second (implemented with delays)
 
-## 📊 Data Pipeline Flow
+## 📊 Data Pipeline Flow with HDFS Integration
 
 ### Stage 1: Data Ingestion (Raw Layer)
 ```
@@ -92,6 +92,7 @@ fetch_weather_data() → /include/raw/weather/raw_weather_YYYYMMDD_HHMMSS.json
 - **Weather**: Structured JSON with metadata, current, hourly, and daily sections
 - **Retention**: All raw files preserved locally and in HDFS for reprocessing
 - **HDFS Storage**: Distributed storage with 2x replication for fault tolerance
+- **Automatic Backup**: Every raw file is automatically backed up to HDFS upon creation
 
 ### Stage 2: Data Transformation (Formatted Layer)
 ```
@@ -120,6 +121,7 @@ format_weather.py → /include/formatted/weather/formatted_weather_YYYYMMDD_HHMM
 - **HDFS Mirror**: Distributed copies for high availability
 - **Consistent Naming**: `formatted_meals_YYYYMMDD_HHMMSS.parquet` format
 - **Cross-Platform Access**: Available via local filesystem and HDFS API
+- **Automatic Replication**: HDFS ensures 2x replication across DataNodes
 
 ### Stage 3: Data Integration (Usage Layer)
 ```
@@ -178,14 +180,14 @@ Local Storage (/usr/local/airflow/include/):
 
 HDFS Storage (/nutriweather/):
 ├── raw/
-│   ├── meals/           # Archived raw meal data
-│   └── weather/         # Archived raw weather data
+│   ├── meals/           # Archived raw meal data (auto-synced)
+│   └── weather/         # Archived raw weather data (auto-synced)
 ├── formatted/
-│   ├── meals/           # Processed parquet files
-│   └── weather/         # Enhanced weather JSON files
+│   ├── meals/           # Processed parquet files (auto-synced)
+│   └── weather/         # Enhanced weather JSON files (auto-synced)
 ├── usage/
-│   ├── timeseries/      # Temperature time series data
-│   └── recommendations/ # Enhanced meal recommendations
+│   ├── timeseries/      # Temperature time series data (auto-synced)
+│   └── recommendations/ # Enhanced meal recommendations (auto-synced)
 └── indexed/             # Elasticsearch indexing metadata
 ```
 
@@ -195,6 +197,8 @@ HDFS Storage (/nutriweather/):
 - **Historical Storage**: Long-term archival of all pipeline outputs
 - **Cross-Platform Access**: Available to Spark, Python, and external tools
 - **Backup Strategy**: Automatic distributed backup for critical data
+- **Real-time Sync**: All pipeline outputs automatically backed up to HDFS
+- **Disaster Recovery**: Complete data recovery from HDFS in case of local storage failure
 
 ### File Naming Convention
 - **Pattern**: `{type}_{category}_{YYYYMMDD_HHMMSS}.{extension}`
@@ -229,26 +233,31 @@ graph TD
    - Runtime: ~2-3 minutes
    - Memory usage: ~200MB
    - Output: ~1000 meals in JSON format
+   - **HDFS**: Automatic backup to `/nutriweather/raw/meals/`
 
 2. **fetch_weather_data** (Bash → Python Script)
    - Runtime: ~10-15 seconds
    - API calls: 1 request to Open-Meteo
    - Output: Current + 24h forecast data
+   - **HDFS**: Automatic backup to `/nutriweather/raw/weather/`
 
 3. **format_meals_data** (Spark Job)
    - Runtime: ~30-45 seconds
    - Spark cluster: 1 master + 1 worker (2GB memory)
    - Operations: DataFrame transformations, UDF applications
+   - **HDFS**: Parquet files backed up to `/nutriweather/formatted/meals/`
 
 4. **format_weather_data** (Python Script)
    - Runtime: ~5-10 seconds
    - External API: Nominatim reverse geocoding
    - Enhancement: Location name resolution
+   - **HDFS**: Enhanced JSON backed up to `/nutriweather/formatted/weather/`
 
 5. **merge_formatted_data** (Spark + Python)
    - Runtime: ~15-20 seconds
    - Logic: Weather-meal recommendation matching
    - Output: Two JSONL files for different use cases
+   - **HDFS**: Both outputs backed up to respective directories
 
 6. **trigger_elasticsearch_indexing** (TriggerDAG)
    - Triggers: `index_elasticsearch_dag`
@@ -363,38 +372,43 @@ astro deploy
 - **Filesystem Health**: `GET /webhdfs/v1/?op=GETFILESTATUS`
 - **Block Reports**: DataNode health and storage utilization
 - **Replication Status**: File replication factor and under-replicated blocks
+- **Backup Monitoring**: Verify all pipeline files are backed up correctly
 
 ## 🔧 HDFS Integration Examples
 
-### Python HDFS Client Usage
+### Python HDFS Client Usage in Pipeline Scripts
 ```python
-from hdfs import InsecureClient
+from spark_utils import get_hdfs_client, backup_to_hdfs, save_with_hdfs_backup
 
-# Connect to HDFS cluster
-client = InsecureClient('http://namenode:9870', user='root')
+# Automatic backup during file creation
+save_with_hdfs_backup("/local/path/data.json", data_dict, "json")
 
-# Write processed data to HDFS
-with client.write('/nutriweather/formatted/meals/latest.parquet') as writer:
-    # Write Parquet data from local processing
+# Manual backup of existing files
+hdfs_client = get_hdfs_client()
+backup_to_hdfs("/local/file.parquet", "/nutriweather/formatted/meals", hdfs_client)
 
-# Read historical data from HDFS
+# Read historical data from HDFS for reprocessing
+client = get_hdfs_client()
 with client.read('/nutriweather/raw/weather/archive.json') as reader:
     historical_data = reader.read()
-
-# List pipeline outputs
-files = client.list('/nutriweather/usage/')
-
-# Create directory structure
-client.makedirs('/nutriweather/analytics/')
 ```
 
-### Spark-HDFS Integration
+### Spark-HDFS Integration for Large Scale Processing
 ```python
-# Read from HDFS in Spark jobs
+# Read from HDFS in Spark jobs for historical analysis
 df = spark.read.parquet("hdfs://namenode:8020/nutriweather/formatted/meals/")
 
-# Write Spark DataFrame to HDFS
-df.write.mode("append").parquet("hdfs://namenode:8020/nutriweather/processed/")
+# Write aggregated results back to HDFS
+df.write.mode("append").parquet("hdfs://namenode:8020/nutriweather/analytics/")
+```
+
+### HDFS Data Recovery Scenarios
+```python
+# Recover latest processed meals if local storage fails
+client = get_hdfs_client()
+files = client.list('/nutriweather/formatted/meals/')
+latest_meals = max(files, key=lambda x: x.split('_')[-1])
+client.download(f'/nutriweather/formatted/meals/{latest_meals}', '/local/recovery/')
 ```
 
 ## 🚨 Error Handling & Recovery
@@ -408,23 +422,27 @@ df.write.mode("append").parquet("hdfs://namenode:8020/nutriweather/processed/")
 - **Airflow Tasks**: 2 retries with 5-minute delays
 - **API Requests**: Exponential backoff with retry-requests
 - **Spark Jobs**: Automatic task retry on executor failure
+- **HDFS Operations**: Automatic retry with connection recovery
 
 ### Data Validation
 - **Schema Validation**: Spark DataFrame schema enforcement
 - **Null Checks**: Required field validation before processing
 - **API Response Validation**: HTTP status and content verification
+- **HDFS Backup Verification**: Confirm successful backup operations
 
 ### HDFS Fault Tolerance
 - **DataNode Failure**: Automatic block replication to healthy nodes
 - **NameNode Recovery**: Metadata checkpoint and journal recovery
 - **Network Partitions**: Client retry with exponential backoff
 - **Storage Full**: Automatic load balancing across DataNodes
+- **Backup Recovery**: Complete pipeline restart from HDFS if local storage fails
 
 ### Monitoring Alerts
 - **Failed Tasks**: Immediate notification via Airflow
 - **Service Health**: Docker container health checks
 - **Data Quality**: Custom validation rules in processing scripts
 - **HDFS Health**: NameNode and DataNode availability monitoring
+- **Backup Status**: Verify all files are successfully backed up to HDFS
 
 ## 🎯 Use Cases & Applications
 
@@ -432,6 +450,7 @@ df.write.mode("append").parquet("hdfs://namenode:8020/nutriweather/processed/")
 - **Weather-Food Correlation Analysis**: Understand eating patterns vs. weather
 - **Seasonal Menu Planning**: Restaurant menu optimization
 - **Supply Chain**: Weather-based ingredient demand forecasting
+- **Historical Analysis**: Multi-year trend analysis using HDFS archived data
 
 ### Personal Applications
 - **Smart Meal Planning**: Automated meal suggestions based on weather
@@ -439,7 +458,7 @@ df.write.mode("append").parquet("hdfs://namenode:8020/nutriweather/processed/")
 - **Recipe Discovery**: Context-aware recipe recommendations
 
 ### Data Science Projects
-- **Machine Learning**: Weather-food preference modeling
+- **Machine Learning**: Weather-food preference modeling using historical HDFS data
 - **Predictive Analytics**: Meal demand forecasting
 - **Time Series Analysis**: Weather pattern correlation with food choices
 
@@ -457,11 +476,16 @@ SPARK_WORKER_MEMORY: 2G
 
 # Elasticsearch Configuration
 ELASTICSEARCH_HOSTS: http://es01:9200
+
+# HDFS Configuration
+HDFS_NAMENODE_URL: http://namenode:9870
+HDFS_NAMENODE_API: hdfs://namenode:8020
 ```
 
 ### Connection Management
 - **Spark Connection**: `spark://spark-master:7077`
 - **Elasticsearch Connection**: `http://es01:9200`
+- **HDFS Connection**: `http://namenode:9870` (Web API) / `hdfs://namenode:8020` (Hadoop API)
 - **External APIs**: No authentication required (free tiers)
 
 ## 🔮 Future Enhancements
@@ -472,6 +496,7 @@ ELASTICSEARCH_HOSTS: http://es01:9200
 - **Geographic Expansion**: Multi-city weather and regional cuisine
 - **Mobile API**: REST API for mobile application integration
 - **HDFS Analytics**: Historical trend analysis on distributed data
+- **Cross-Region HDFS**: Multi-region HDFS clusters for global data distribution
 
 ### Scalability Improvements
 - **Spark Cluster Expansion**: Multi-worker Spark setup
@@ -479,5 +504,10 @@ ELASTICSEARCH_HOSTS: http://es01:9200
 - **Airflow Scaling**: Kubernetes deployment with auto-scaling
 - **Data Partitioning**: Date-based partitioning for large datasets
 - **HDFS Scaling**: Additional DataNodes for increased storage capacity
+- **HDFS Federation**: Multiple NameNodes for namespace scaling
 
-...
+### Advanced HDFS Features
+- **HDFS Snapshots**: Point-in-time data recovery
+- **HDFS Encryption**: Data at rest encryption for sensitive information
+- **HDFS Quotas**: Storage quota management for different data types
+- **Cross-Cluster Replication**: Disaster recovery across data centers

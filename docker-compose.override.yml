@@ -106,8 +106,6 @@ services:
     user: root
     environment:
       - HADOOP_HOME=/opt/hadoop
-      - HADOOP_HEAPSIZE=1024
-      - HADOOP_NAMENODE_OPTS="-Xmx1g"
     volumes:
       - namenode-data:/opt/hadoop/data/nameNode
       - ./hdfs_config:/opt/hadoop/etc/hadoop
@@ -136,7 +134,6 @@ services:
     user: root
     environment:
       - HADOOP_HOME=/opt/hadoop
-      - HADOOP_HEAPSIZE=512
     volumes:
       - datanode1-data:/opt/hadoop/data/dataNode
       - ./hdfs_config:/opt/hadoop/etc/hadoop
@@ -159,7 +156,6 @@ services:
     user: root
     environment:
       - HADOOP_HOME=/opt/hadoop
-      - HADOOP_HEAPSIZE=512
     volumes:
       - datanode2-data:/opt/hadoop/data/dataNode
       - ./hdfs_config:/opt/hadoop/etc/hadoop

@@ -69,17 +69,18 @@ def main():
         
         formatted_data = format_weather_data(raw_data)
         
-        # Save formatted data
+        # Save formatted data with HDFS backup
         output_dir = "/usr/local/airflow/include/formatted/weather"
         ensure_directory(output_dir)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file = f"{output_dir}/formatted_weather_{timestamp}.json"
         
-        with open(output_file, 'w') as f:
-            json.dump(formatted_data, f, indent=2)
+        # Use the new save_with_hdfs_backup function
+        from spark_utils import save_with_hdfs_backup
+        save_with_hdfs_backup(output_file, formatted_data, "json")
         
-        print(f"Formatted weather saved to: {output_file}")
+        print(f"Formatted weather saved locally and backed up to HDFS: {output_file}")
         
         # Spark validation
         df = spark.read.json(spark.sparkContext.parallelize([json.dumps(formatted_data)]))
