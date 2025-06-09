@@ -1,77 +1,75 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, current_date, explode
+"""
+Simplified Meals Data Fetching Module
+"""
+
+import requests
+import json
+import string
 from datetime import datetime
-import os
-import shutil
+from spark_utils import get_spark_session, ensure_directory
+from pyspark.sql.functions import explode, col
 
 
-def setup_output_directories():
-    """Setup output directories"""
-    output_dirs = [
-        "/usr/local/airflow/include/raw/meals"
-    ]
+def fetch_all_meals():
+    """Fetch all meals from TheMealDB API."""
+    base_url = "https://www.themealdb.com/api/json/v1/1"
+    all_meals = []
+    seen_ids = set()
     
-    for dir_path in output_dirs:
-        if os.path.exists(dir_path):
-            shutil.rmtree(dir_path)
-        os.makedirs(dir_path, exist_ok=True)
-        print(f"Created directory: {dir_path}")
+    print("Fetching meals from TheMealDB...")
+    
+    for letter in string.ascii_lowercase:
+        try:
+            response = requests.get(f"{base_url}/search.php?f={letter}", timeout=30)
+            response.raise_for_status()
+            
+            meals = response.json().get('meals', []) or []
+            for meal in meals:
+                meal_id = meal.get('idMeal')
+                if meal_id and meal_id not in seen_ids:
+                    all_meals.append(meal)
+                    seen_ids.add(meal_id)
+                    
+        except Exception as e:
+            print(f"Error fetching meals for '{letter}': {e}")
+            continue
+    
+    return all_meals
 
 
 def main():
-    setup_output_directories()
-    
-    spark = SparkSession.builder \
-        .appName("MealDB Data Fetch") \
-        .config("spark.sql.adaptive.enabled", "true") \
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
-        .getOrCreate()
+    spark = get_spark_session("FetchMeals")
     
     try:
-        # Read the raw meals JSON file
-        print("Reading raw meals data...")
-        raw_meals_path = "/usr/local/airflow/include/raw/meals/raw_meals.json"
+        # Fetch meals data
+        meals_data = fetch_all_meals()
+        print(f"Fetched {len(meals_data)} unique meals")
         
-        # Read JSON file and extract meals array
-        df_raw = spark.read.option("multiline", "true").json(raw_meals_path)
-        df = df_raw.select(explode(col("meals")).alias("meal")).select("meal.*")
+        # Setup output directory
+        output_dir = "/usr/local/airflow/include/raw/meals"
+        ensure_directory(output_dir)
         
-        print(f"Total meals loaded: {df.count()}")
-        
-        # Process and transform the data
-        processed_df = df.select(
-            col("idMeal").alias("meal_id"),
-            col("strMeal").alias("meal_name"),
-            col("strCategory").alias("category"),
-            col("strArea").alias("region"),
-            col("strInstructions").alias("instructions"),
-            col("strMealThumb").alias("image_url"),
-            col("strYoutube").alias("youtube_url"),
-            col("strSource").alias("source_url")
-        ).withColumn(
-            "processed_date", current_date()
-        ).filter(col("meal_name").isNotNull())
-        
-        print("Sample of processed data:")
-        processed_df.select("meal_name", "region", "category").show(10, truncate=False)
-        
-        # Save processed meals with timestamp
-        print("Saving processed meals...")
+        # Save raw meals data
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"processed_meals_{timestamp}.json"
-        output_path = f"/usr/local/airflow/include/raw/meals/{filename}"
+        output_file = f"{output_dir}/raw_meals_{timestamp}.json"
         
-        processed_df.coalesce(1).write \
-            .mode("overwrite") \
-            .json(output_path)
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump({
+                "total_meals": len(meals_data),
+                "fetch_timestamp": timestamp,
+                "meals": meals_data
+            }, f, indent=2)
         
-        print(f"Successfully saved processed meals to: {output_path}")
+        print(f"Raw meals saved to: {output_file}")
         
-        total_meals = processed_df.count()
-        print(f"Processing complete! Processed {total_meals} meals")
+        # Create Spark DataFrame for validation
+        df = spark.createDataFrame([{"meals": meals_data}])
+        df_exploded = df.select(explode(col("meals")).alias("meal"))
+        
+        print(f"Spark validation: {df_exploded.count()} meals processed")
         
     except Exception as e:
-        print(f"Error processing meals: {e}")
+        print(f"Error in meals fetch: {e}")
         raise
     finally:
         spark.stop()

@@ -174,7 +174,7 @@ For time-series analysis and temperature trends:
 For dashboarding and meal recommendations:
 
 ```json
-{"@timestamp": "2024-01-01 03:45:12", "timezone": "Europe/Paris", "current_temperature": 25.1, "uv_index_max": 7.0, "relative_humidity": 58.0, "wind_speed": 17.6, "suggested_meal": "Lasagna", "preparation_time": "45 minutes", "instructions": "Preheat oven to 180°C. Cook the meat and onions...", "ingredients": "Ground beef, onions, tomato sauce...", "recommended_advice": "Great weather for hearty meals and moderate cooking. Enjoy balanced nutrition!"}
+{"@timestamp": "2024-01-01 03:45:12", "timezone": "Europe/Paris", "current_temperature": 25.1, "relative_humidity": 58.0, "wind_speed": 17.6, "location": "Paris, France", "latitude": 48.85, "longitude": 2.35, "recommended_advice": "Great weather for hearty meals and moderate cooking. Enjoy balanced nutrition!", "temperature_category": "moderate", "uv_index_max": 7.0, "suggested_meal": "Lasagna", "preparation_time": "45 minutes", "instructions": "Preheat oven to 180°C. Cook the meat and onions...", "ingredients": "Ground beef, onions, tomato sauce...", "meal_category": "Vegetarian", "meal_region": "Mexican"}
 ```
 
 ---
@@ -188,8 +188,8 @@ For dashboarding and meal recommendations:
   - Meals: Parquet files (columnar, efficient for analytics)
   - Weather: JSON files (structured, time-series)
 - **Usage Data**: `include/usage/`
-  - Temperature time-series: JSONL files for Elasticsearch indexing
-  - Enhanced recommendations: JSONL files for Kibana dashboarding
+  - Temperature time-series: JSONL files for Elasticsearch indexing with timezone support
+  - Enhanced recommendations: JSONL files for Kibana dashboarding with complete weather and meal data
 
 ---
 
@@ -198,20 +198,20 @@ For dashboarding and meal recommendations:
 The pipeline produces two types of records optimized for Elasticsearch:
 
 ### Temperature Index (`nutriweather_temperature`)
-- Time-series temperature data
+- Time-series temperature data with timezone support
 - Optimized for trend analysis and monitoring
 - Fields: `@timestamp`, `temperature`, `timezone`, `location`, `latitude`, `longitude`
 
 ### Enhanced Index (`nutriweather_enhanced`)
-- Complete weather + meal recommendations
+- Complete weather + meal recommendations with advice dataset integration
 - Optimized for dashboarding and insights
-- Fields: All weather data + meal recommendations + advice
+- Fields: `@timestamp`, `timezone`, `current_temperature`, `relative_humidity`, `wind_speed`, `location`, `latitude`, `longitude`, `recommended_advice`, `temperature_category`, `uv_index_max`, `suggested_meal`, `preparation_time`, `instructions`, `ingredients`, `meal_category`, `meal_region`
 
 ### Kibana Dashboards
-- **Temperature Trends**: Time-series visualizations
-- **Meal Recommendations**: Current conditions and suggestions
+- **Temperature Trends**: Time-series visualizations with timezone-aware data
+- **Meal Recommendations**: Current conditions and suggestions with detailed meal information
 - **Geographic Analysis**: Location-based weather patterns
-- **Nutritional Insights**: Meal category and region analysis
+- **Nutritional Insights**: Meal category and region analysis with preparation details
 
 ---
 

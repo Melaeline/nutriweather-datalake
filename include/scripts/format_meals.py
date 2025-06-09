@@ -1,210 +1,106 @@
-from pyspark.sql import SparkSession, Row
-from pyspark.sql.functions import (
-    col, udf, current_date, explode, array, struct, when, lit, 
-    collect_list, create_map, arrays_zip, transform, concat_ws, array_join
-)
-from pyspark.sql.types import IntegerType, ArrayType, StringType, StructType, StructField
-from datetime import datetime
-import random
-import os
+"""
+Simplified Meals Data Formatting Module
+"""
+
 import glob
-import shutil
-
-
-def split_instructions(instructions):
-    """Split instructions by newlines and clean up"""
-    if not instructions:
-        return ""
-    
-    # Split on various newline patterns and clean up
-    steps = instructions.replace('\r\n\r\n', '\n').replace('\r\n', '\n').split('\n')
-    
-    # Clean up steps and filter out empty ones
-    cleaned_steps = []
-    for step in steps:
-        step = step.strip()
-        if step:
-            # Split steps further if they contain multiple sentences
-            parts = []
-            current = ""
-            for char in step:
-                current += char
-                if char == '.' and not (current.strip()[-3:].replace('.', '').isdigit()):
-                    cleaned = current.strip()
-                    if cleaned:
-                        parts.append(cleaned)
-                    current = ""
-            
-            if current.strip():
-                parts.append(current.strip())
-            
-            # Add non-empty parts to cleaned steps
-            cleaned_steps.extend([p for p in parts if p])
-    
-    return ";".join(cleaned_steps)
+import os
+from datetime import datetime
+from spark_utils import get_spark_session, ensure_directory, add_metadata_columns
+from pyspark.sql.functions import col, explode, udf, array, when, concat_ws, array_join
+from pyspark.sql.types import IntegerType, StringType
 
 
 def estimate_prep_time(meal_name):
-    """Estimate preparation time based on meal name - deterministic."""
+    """Simple preparation time estimation."""
     if not meal_name:
-        return 30  # Default value instead of random
+        return 30
     
     meal_lower = meal_name.lower()
-    
-    # Calculate base time from meal name length and characteristics
     base_time = len(meal_name) % 20 + 20
     
-    if any(keyword in meal_lower for keyword in ["soup", "stew", "roast", "pot roast", "bake", "casserole", "lasagna", "tagine", "biryani", "rendang"]):
+    if any(word in meal_lower for word in ["soup", "stew", "roast", "casserole"]):
         return min(120, base_time + 60)
-    elif any(keyword in meal_lower for keyword in ["salad", "sandwich", "omelette", "pancake", "toast"]):
-        return max(10, base_time - 15)
-    elif any(keyword in meal_lower for keyword in ["pie", "cake", "tart", "brownie", "pudding", "cookies", "cheesecake"]):
-        return min(90, base_time + 40)
-    elif any(keyword in meal_lower for keyword in ["grill", "fry", "chops", "cutlet", "sauté"]):
-        return min(45, base_time + 10)
+    elif any(word in meal_lower for word in ["salad", "sandwich", "pancake"]):
+        return max(10, base_time - 10)
     else:
-        return base_time + 10
+        return base_time + 15
 
 
-def estimate_temperature(meal_name):
-    """Estimate ideal serving temperature based on meal name - deterministic."""
-    if not meal_name:
-        return 20  # Default moderate temperature
+def clean_instructions(instructions):
+    """Clean and format cooking instructions."""
+    if not instructions:
+        return ""
     
-    meal_lower = meal_name.lower()
-    
-    # Calculate base temperature from meal characteristics
-    name_hash = sum(ord(c) for c in meal_lower) % 15 + 10
-    
-    if any(keyword in meal_lower for keyword in ["soup", "stew", "roast", "pot roast", "hotpot", "chili", "bake", "casserole"]):
-        return max(5, name_hash - 5)  # Hot dishes: 5-15°C
-    elif any(keyword in meal_lower for keyword in ["salad", "sushi", "cold", "gazpacho", "ice cream"]):
-        return min(35, name_hash + 15)  # Cold dishes: 20-35°C  
-    elif any(keyword in meal_lower for keyword in ["cake", "pudding", "dessert", "cookies", "pastries"]):
-        return name_hash  # Desserts: variable 10-25°C
-    else:
-        return min(25, max(15, name_hash))  # Most dishes: 15-25°C
+    # Simple cleaning - split on newlines and rejoin with semicolons
+    steps = [step.strip() for step in instructions.replace('\r\n', '\n').split('\n') if step.strip()]
+    return "; ".join(steps[:10])  # Limit to 10 steps
 
 
 def main():
-    spark = SparkSession.builder \
-        .appName("MealDB Data Format") \
-        .config("spark.sql.adaptive.enabled", "true") \
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
-        .getOrCreate()
+    spark = get_spark_session("FormatMeals")
     
     try:
-        print("Reading raw meals data...")
+        # Find latest raw meals file
         raw_dir = "/usr/local/airflow/include/raw/meals"
         pattern = os.path.join(raw_dir, "raw_meals_*.json")
         files = glob.glob(pattern)
         
         if not files:
             raise FileNotFoundError("No raw meal files found")
-            
-        latest_file = max(files, key=os.path.getctime)
-        print(f"Using file: {latest_file}")
         
-        # Read and explode meals array
+        latest_file = max(files, key=os.path.getctime)
+        print(f"Processing: {latest_file}")
+        
+        # Read and explode meals
         df_raw = spark.read.option("multiline", "true").json(latest_file)
         df = df_raw.select(explode(col("meals")).alias("meal")).select("meal.*")
-        print(f"Total meals loaded: {df.count()}")
         
-        # Define UDFs with proper return types
+        print(f"Processing {df.count()} meals")
+        
+        # Create UDFs
         prep_time_udf = udf(estimate_prep_time, IntegerType())
-        temperature_udf = udf(estimate_temperature, IntegerType())
-        instructions_udf = udf(split_instructions, StringType())
+        instructions_udf = udf(clean_instructions, StringType())
         
-        # First, create separate arrays for ingredients and measures
-        ingredient_arrays = []
-        measure_arrays = []
+        # Build ingredients array (simplified)
+        ingredient_cols = []
         for i in range(1, 21):
-            ingredient_arrays.append(
+            ingredient_cols.append(
                 when(
-                    (col(f"strIngredient{i}").isNotNull()) & 
-                    (col(f"strIngredient{i}") != "") & 
-                    (col(f"strIngredient{i}") != " "), 
+                    col(f"strIngredient{i}").isNotNull() & 
+                    (col(f"strIngredient{i}") != ""),
                     concat_ws(": ", col(f"strIngredient{i}"), col(f"strMeasure{i}"))
                 )
             )
         
-        # Create the initial dataframe with base columns
+        # Create formatted DataFrame
         formatted_df = df.select(
             col("idMeal").alias("meal_id"),
             col("strMeal").alias("meal_name"),
             col("strCategory").alias("category"),
             col("strArea").alias("region"),
-            col("strInstructions").alias("raw_instructions"),
-            col("strMealThumb").alias("image_url"),
-            col("strYoutube").alias("youtube_url"),
-            col("strSource").alias("source_url"),
-            col("strTags").alias("tags"),
-            # Create string of non-null ingredients
-            array(*ingredient_arrays).alias("ingredients_array")
-        )
+            array_join(array(*ingredient_cols), "; ").alias("ingredients"),
+            instructions_udf(col("strInstructions")).alias("instructions"),
+            prep_time_udf(col("strMeal")).alias("preparation_time"),
+            col("strMealThumb").alias("image_url")
+        ).filter(col("meal_name").isNotNull())
         
-        # Create final DataFrame with all required columns
-        final_df = formatted_df.select(
-            "meal_id",
-            "meal_name", 
-            "category",
-            "region",
-            array_join("ingredients_array", ";").alias("ingredients"),
-            instructions_udf(col("raw_instructions")).alias("instructions"),
-            prep_time_udf(col("meal_name")).alias("preparation_time"),
-            temperature_udf(col("meal_name")).alias("temperature"),
-            "image_url",
-            "youtube_url", 
-            "source_url",
-            "tags"
-        ).withColumn(
-            "formatted_date", current_date()
-        )
+        # Add metadata
+        final_df = add_metadata_columns(formatted_df)
         
-        # Show sample with proper formatting
-        print("\nSample of formatted data:")
-        final_df.select(
-            "meal_name",
-            "ingredients",
-            "instructions"
-        ).show(2, truncate=False)
-        
-        print("\nSaving formatted meals as Parquet...")
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Save as Parquet
         output_dir = "/usr/local/airflow/include/formatted/meals"
-        os.makedirs(output_dir, exist_ok=True)
+        ensure_directory(output_dir)
         
-        # Save to a temporary directory first
-        temp_dir = f"/tmp/formatted_meals_{timestamp}_temp"
-        final_path = f"{output_dir}/formatted_meals_{timestamp}.parquet"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = f"{output_dir}/formatted_meals_{timestamp}.parquet"
         
-        # Write as a single file using coalesce(1)
-        final_df.coalesce(1).write \
-            .mode("overwrite") \
-            .format("parquet") \
-            .option("compression", "snappy") \
-            .save(temp_dir)
+        final_df.coalesce(1).write.mode("overwrite").parquet(output_path)
         
-        # Find the parquet file in temp directory
-        parquet_files = [f for f in os.listdir(temp_dir) if f.endswith('.parquet')]
-        if not parquet_files:
-            raise RuntimeError("No parquet file found in temp directory")
-        
-        # Move the single parquet file to final location
-        temp_parquet_path = os.path.join(temp_dir, parquet_files[0])
-        shutil.move(temp_parquet_path, final_path)
-        
-        # Clean up temp directory
-        shutil.rmtree(temp_dir)
-        
-        print(f"Successfully saved formatted meals to: {final_path}")
-        total_meals = final_df.count()
-        print(f"Formatting complete! Processed {total_meals} meals")
+        print(f"Formatted meals saved to: {output_path}")
+        print(f"Total meals formatted: {final_df.count()}")
         
     except Exception as e:
         print(f"Error formatting meals: {e}")
-        import traceback
-        traceback.print_exc()
         raise
     finally:
         spark.stop()

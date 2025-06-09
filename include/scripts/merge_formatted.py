@@ -1,256 +1,158 @@
 """
-Merge Formatted Data Module - Elasticsearch Compatible
-
-This module merges formatted meal and weather data to create clean, flat records
-optimized for Elasticsearch indexing and Kibana dashboarding.
+Simplified Data Merge Module - Elasticsearch Compatible
 """
 
-import os
-import json
 import glob
+import json
+import os
 import pandas as pd
-from datetime import datetime, timedelta
-import traceback
-import hashlib
+from datetime import datetime
+from spark_utils import get_spark_session, ensure_directory
 import random
 
 
-def get_latest_file(directory, pattern):
-    """Get the latest file matching pattern in directory."""
-    full_pattern = os.path.join(directory, pattern)
-    files = glob.glob(full_pattern)
-    if not files:
-        raise FileNotFoundError(f"No files found matching {full_pattern}")
-    return max(files, key=os.path.getctime)
-
-
-def load_latest_meals_data():
-    """Load the latest formatted meals data from Parquet."""
+def load_latest_meals():
+    """Load latest formatted meals data."""
     meals_dir = "/usr/local/airflow/include/formatted/meals"
-    try:
-        latest_meals_file = get_latest_file(meals_dir, "formatted_meals_*.parquet")
-        print(f"Loading meals data from: {latest_meals_file}")
-        df = pd.read_parquet(latest_meals_file)
-        return df.to_dict('records')
-    except Exception as e:
-        print(f"Error loading meals data: {e}")
+    pattern = f"{meals_dir}/formatted_meals_*.parquet"
+    files = glob.glob(pattern)
+    
+    if not files:
         return []
+    
+    latest_file = max(files, key=os.path.getctime)
+    df = pd.read_parquet(latest_file)
+    return df.to_dict('records')
 
 
-def load_latest_weather_data():
-    """Load the latest formatted weather data from JSON."""
+def load_latest_weather():
+    """Load latest formatted weather data."""
     weather_dir = "/usr/local/airflow/include/formatted/weather"
-    try:
-        latest_weather_file = get_latest_file(weather_dir, "formatted_weather_*.json")
-        print(f"Loading weather data from: {latest_weather_file}")
-        with open(latest_weather_file, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error loading weather data: {e}")
+    pattern = f"{weather_dir}/formatted_weather_*.json"
+    files = glob.glob(pattern)
+    
+    if not files:
         return {}
+    
+    latest_file = max(files, key=os.path.getctime)
+    with open(latest_file, 'r') as f:
+        return json.load(f)
 
 
-def load_advice_data():
-    """Load advice data from CSV file."""
+def load_advice_dataset():
+    """Load advice dataset for temperature-based recommendations."""
     advice_file = "/usr/local/airflow/include/advice_dataset.csv"
     try:
-        # Read CSV with semicolon separator
         df = pd.read_csv(advice_file, sep=';')
         return df.to_dict('records')
-    except Exception as e:
-        print(f"Error loading advice data: {e}")
+    except:
         return []
 
 
-def generate_temperature_records(weather_data):
-    """Generate simple temperature records for time-series analysis."""
+def get_meal_advice(temperature, advice_data):
+    """Get advice based on temperature from advice dataset."""
+    if not advice_data:
+        return get_simple_meal_advice(temperature)
+    
+    # Find closest temperature match
+    closest_advice = min(advice_data, key=lambda x: abs(x['temperature'] - temperature))
+    return closest_advice['advice']
+
+
+def get_simple_meal_advice(temperature):
+    """Fallback simple meal advice based on temperature."""
+    if temperature < 10:
+        return "Perfect weather for hot soups and warm comfort food!"
+    elif temperature < 20:
+        return "Great weather for hearty meals and moderate cooking!"
+    elif temperature < 30:
+        return "Pleasant weather for fresh dishes and light cooking!"
+    else:
+        return "Hot weather - perfect for cold dishes and minimal cooking!"
+
+
+def get_temperature_category(temperature):
+    """Categorize temperature."""
+    if temperature < 5:
+        return "cold"
+    elif temperature < 15:
+        return "cool"
+    elif temperature < 25:
+        return "moderate"
+    elif temperature < 35:
+        return "warm"
+    else:
+        return "hot"
+
+
+def select_random_meal(meals_data):
+    """Select a random meal for recommendation."""
+    if not meals_data:
+        return None
+    return random.choice(meals_data)
+
+
+def create_temperature_records(weather_data):
+    """Create simple temperature time-series records."""
     records = []
     
     if not weather_data.get('hourly'):
         return records
     
     location = weather_data.get('location', {})
-    timezone = location.get('timezone', 'UTC')
     
-    for hourly_record in weather_data['hourly']:
-        if hourly_record.get('temperature_2m') is not None:
-            records.append({
-                "@timestamp": hourly_record['date'].replace(' UTC', ''),
-                "temperature": round(hourly_record['temperature_2m'], 1),
-                "timezone": timezone,
-                "location": location.get('name', 'Unknown'),
-                "latitude": location.get('coordinates', {}).get('latitude'),
-                "longitude": location.get('coordinates', {}).get('longitude')
-            })
+    for hour_data in weather_data['hourly']:
+        records.append({
+            "@timestamp": hour_data['time'].replace('T', ' ').replace('+00:00', ''),
+            "temperature": hour_data['temperature_2m'],
+            "timezone": location.get('timezone', 'UTC'),
+            "location": location.get('name', 'Unknown'),
+            "latitude": location.get('latitude'),
+            "longitude": location.get('longitude')
+        })
     
     return records
 
 
-def get_meal_advice(temperature):
-    """Get meal advice based on temperature - deterministic."""
-    if temperature < 5:
-        return "Extremely cold weather calls for hearty stews and hot beverages. Stay warm and nourished!"
-    elif temperature < 10:
-        return "Perfect weather for hot soups and warm comfort food. Stay cozy!"
-    elif temperature < 15:
-        return "Cool weather ideal for warm meals and moderate cooking. Enjoy balanced nutrition!"
-    elif temperature < 20:
-        return "Great weather for hearty meals and moderate cooking. Enjoy balanced nutrition!"
-    elif temperature < 25:
-        return "Pleasant weather for fresh salads and light cooking. Stay hydrated!"
-    elif temperature < 30:
-        return "Warm weather perfect for fresh dishes and minimal cooking. Keep cool!"
-    else:
-        return "Hot weather calls for cold dishes and minimal cooking. Stay refreshed!"
-
-
-def get_random_advice(advice_data, temperature):
-    """Get random advice based on temperature with some randomness."""
-    if not advice_data:
-        return get_meal_advice(temperature)  # Fallback to old method
-    
-    # Filter advice within temperature range (±3 degrees for variety)
-    temp_range = 3
-    suitable_advice = [
-        advice for advice in advice_data 
-        if abs(advice['temperature'] - temperature) <= temp_range
-    ]
-    
-    # If no suitable advice found, expand the range
-    if not suitable_advice:
-        temp_range = 6
-        suitable_advice = [
-            advice for advice in advice_data 
-            if abs(advice['temperature'] - temperature) <= temp_range
-        ]
-    
-    # If still no advice, use all advice
-    if not suitable_advice:
-        suitable_advice = advice_data
-    
-    # Add some randomness - occasionally pick from broader temperature range
-    if random.random() < 0.2:  # 20% chance for more variety
-        broader_range = 8
-        broader_advice = [
-            advice for advice in advice_data 
-            if abs(advice['temperature'] - temperature) <= broader_range
-        ]
-        if broader_advice:
-            suitable_advice = broader_advice
-    
-    # Randomly select from suitable advice
-    return random.choice(suitable_advice)['advice']
-
-
-def get_temperature_category(temperature):
-    """Categorize temperature for meal selection."""
-    if temperature < 10:
-        return "cold"
-    elif temperature < 20:
-        return "moderate"
-    elif temperature < 30:
-        return "warm"
-    else:
-        return "hot"
-
-
-def select_recommended_meal(meals_data, temperature, date_str):
-    """Select a meal recommendation with randomness based on temperature and date."""
-    if not meals_data:
-        return None
-    
-    # Get temperature category
-    temp_category = get_temperature_category(temperature)
-    
-    # Filter meals based on temperature preference with some flexibility
-    if temp_category == "cold":
-        # Cold weather - prefer hot meals but allow some variety
-        preferred = [m for m in meals_data if m.get('temperature', 15) <= 18]
-        if random.random() < 0.3:  # 30% chance for variety
-            preferred.extend([m for m in meals_data if 18 < m.get('temperature', 15) <= 22])
-    elif temp_category == "hot":
-        # Hot weather - prefer cold meals but allow some variety
-        preferred = [m for m in meals_data if m.get('temperature', 15) >= 18]
-        if random.random() < 0.3:  # 30% chance for variety
-            preferred.extend([m for m in meals_data if 14 <= m.get('temperature', 15) < 18])
-    else:
-        # Moderate/warm weather - prefer moderate temperature meals with variety
-        preferred = [m for m in meals_data if 12 <= m.get('temperature', 15) <= 28]
-        if random.random() < 0.4:  # 40% chance for more variety
-            preferred = meals_data
-    
-    # If no preferred meals found, use all meals
-    if not preferred:
-        preferred = meals_data
-    
-    # Add randomness while maintaining some consistency for the same day
-    # Use date as partial seed but add random component
-    selection_seed = f"{date_str}_{temp_category}_{int(temperature)}"
-    hash_value = int(hashlib.md5(selection_seed.encode()).hexdigest(), 16)
-    
-    # Combine hash-based selection with randomness
-    base_index = hash_value % len(preferred)
-    random_offset = random.randint(-2, 2)  # Small random offset
-    selected_index = (base_index + random_offset) % len(preferred)
-    
-    return preferred[selected_index]
-
-
-def generate_enhanced_records(weather_data, meals_data, advice_data):
-    """Generate enhanced records with meal recommendations and advice."""
+def create_enhanced_records(weather_data, meals_data, advice_data):
+    """Create enhanced records with meal recommendations."""
     records = []
     
-    if not weather_data.get('current'):
-        return records
-    
-    current = weather_data['current']
+    current = weather_data.get('current', {})
     location = weather_data.get('location', {})
     daily = weather_data.get('daily', [])
     
-    current_temp = current.get('temperature_2m')
-    if current_temp is None:
+    if not current.get('temperature_2m'):
         return records
     
+    temp = current['temperature_2m']
+    recommended_meal = select_random_meal(meals_data)
+    advice = get_meal_advice(temp, advice_data)
+    temp_category = get_temperature_category(temp)
+    
     # Get UV index from daily data
-    uv_index = None
-    if daily:
-        uv_index = daily[0].get('uv_index_max')
+    uv_index = daily[0]['uv_index_max'] if daily else None
     
-    # Get current date for deterministic selection
-    current_time = current.get('time', datetime.now().isoformat())
-    date_str = current_time.split('T')[0] if 'T' in current_time else current_time.split(' ')[0]
-    
-    # Select recommended meal with randomness
-    recommended_meal = select_recommended_meal(meals_data, current_temp, date_str)
-    
-    # Get random advice based on temperature
-    temperature_advice = get_random_advice(advice_data, current_temp)
-    
-    # Create enhanced record
     record = {
-        "@timestamp": current_time.replace(' UTC', ''),
+        "@timestamp": current['time'].replace('T', ' ').replace('+00:00', ''),
         "timezone": location.get('timezone', 'UTC'),
-        "current_temperature": round(current_temp, 1),
+        "current_temperature": temp,
         "relative_humidity": current.get('relative_humidity_2m'),
         "wind_speed": current.get('wind_speed_10m'),
         "location": location.get('name', 'Unknown'),
-        "latitude": location.get('coordinates', {}).get('latitude'),
-        "longitude": location.get('coordinates', {}).get('longitude'),
-        "recommended_advice": temperature_advice,
-        "temperature_category": get_temperature_category(current_temp)
+        "latitude": location.get('latitude'),
+        "longitude": location.get('longitude'),
+        "recommended_advice": advice,
+        "temperature_category": temp_category,
+        "uv_index_max": uv_index
     }
     
-    # Add UV index if available
-    if uv_index is not None:
-        record["uv_index_max"] = round(uv_index, 1)
-    
-    # Add meal recommendation if available
     if recommended_meal:
         record.update({
             "suggested_meal": recommended_meal.get('meal_name'),
             "preparation_time": f"{recommended_meal.get('preparation_time', 30)} minutes",
-            "instructions": recommended_meal.get('instructions', '').replace(';', '. ')[:200] + "...",
-            "ingredients": recommended_meal.get('ingredients', '').replace(';', ', ')[:150] + "...",
+            "instructions": recommended_meal.get('instructions', ''),
+            "ingredients": recommended_meal.get('ingredients', ''),
             "meal_category": recommended_meal.get('category'),
             "meal_region": recommended_meal.get('region')
         })
@@ -259,67 +161,59 @@ def generate_enhanced_records(weather_data, meals_data, advice_data):
     return records
 
 
-def save_elasticsearch_records(temperature_records, enhanced_records):
-    """Save records in Elasticsearch-compatible format."""
-    usage_dir = "/usr/local/airflow/include/usage"
-    os.makedirs(usage_dir, exist_ok=True)
+def save_records(temp_records, enhanced_records):
+    """Save records in JSONL format for Elasticsearch."""
+    output_dir = "/usr/local/airflow/include/usage"
+    ensure_directory(output_dir)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # Save temperature records (for time-series analysis)
-    temp_filename = f"temperature_timeseries_{timestamp}.jsonl"
-    temp_filepath = os.path.join(usage_dir, temp_filename)
-    
-    with open(temp_filepath, 'w') as f:
-        for record in temperature_records:
+    # Save temperature records
+    temp_file = f"{output_dir}/temperature_timeseries_{timestamp}.jsonl"
+    with open(temp_file, 'w') as f:
+        for record in temp_records:
             f.write(json.dumps(record) + '\n')
     
-    print(f"Temperature records saved to: {temp_filepath}")
-    print(f"Total temperature records: {len(temperature_records)}")
-    
-    # Save enhanced records (for dashboarding)
-    enhanced_filename = f"enhanced_recommendations_{timestamp}.jsonl"
-    enhanced_filepath = os.path.join(usage_dir, enhanced_filename)
-    
-    with open(enhanced_filepath, 'w') as f:
+    # Save enhanced records
+    enhanced_file = f"{output_dir}/enhanced_recommendations_{timestamp}.jsonl"
+    with open(enhanced_file, 'w') as f:
         for record in enhanced_records:
             f.write(json.dumps(record) + '\n')
     
-    print(f"Enhanced records saved to: {enhanced_filepath}")
-    print(f"Total enhanced records: {len(enhanced_records)}")
-    
-    return temp_filepath, enhanced_filepath
+    return temp_file, enhanced_file
 
 
 def main():
-    """Main execution function."""
-    print("=== Starting Elasticsearch-Compatible Data Merge ===")
+    spark = get_spark_session("MergeData")
     
     try:
+        print("Starting data merge process...")
+        
         # Load data
-        meals_data = load_latest_meals_data()
-        weather_data = load_latest_weather_data()
-        advice_data = load_advice_data()
+        meals_data = load_latest_meals()
+        weather_data = load_latest_weather()
+        advice_data = load_advice_dataset()
         
         print(f"Loaded {len(meals_data)} meals")
-        print(f"Loaded {len(advice_data)} advice entries")
         print(f"Weather data available: {bool(weather_data)}")
+        print(f"Loaded {len(advice_data)} advice entries")
         
-        # Generate records
-        temperature_records = generate_temperature_records(weather_data)
-        enhanced_records = generate_enhanced_records(weather_data, meals_data, advice_data)
+        # Create records
+        temp_records = create_temperature_records(weather_data)
+        enhanced_records = create_enhanced_records(weather_data, meals_data, advice_data)
         
         # Save records
-        temp_file, enhanced_file = save_elasticsearch_records(temperature_records, enhanced_records)
+        temp_file, enhanced_file = save_records(temp_records, enhanced_records)
         
-        print("=== Data Merge Completed Successfully ===")
-        print(f"Temperature file: {temp_file}")
-        print(f"Enhanced file: {enhanced_file}")
+        print(f"Temperature records: {len(temp_records)} -> {temp_file}")
+        print(f"Enhanced records: {len(enhanced_records)} -> {enhanced_file}")
+        print("Data merge completed successfully!")
         
     except Exception as e:
-        print(f"Error in data merge process: {e}")
-        traceback.print_exc()
+        print(f"Error in merge process: {e}")
         raise
+    finally:
+        spark.stop()
 
 
 if __name__ == "__main__":
