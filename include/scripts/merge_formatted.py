@@ -186,7 +186,7 @@ def save_records(temp_records, enhanced_records):
             f.write(json.dumps(record) + '\n')
     
     # Backup temperature records to HDFS
-    backup_to_hdfs(temp_file, "/nutriweather/usage/timeseries", hdfs_client)
+    backup_to_hdfs(temp_file, "/nutriweather/usage", hdfs_client)
     
     # Save enhanced records
     enhanced_file = f"{output_dir}/enhanced_recommendations_{timestamp}.jsonl"
@@ -195,7 +195,7 @@ def save_records(temp_records, enhanced_records):
             f.write(json.dumps(record) + '\n')
     
     # Backup enhanced records to HDFS
-    backup_to_hdfs(enhanced_file, "/nutriweather/usage/recommendations", hdfs_client)
+    backup_to_hdfs(enhanced_file, "/nutriweather/usage", hdfs_client)
     
     print(f"Files saved locally and backed up to HDFS:")
     print(f"  Temperature: {temp_file}")

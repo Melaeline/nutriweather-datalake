@@ -56,8 +56,12 @@ NAMENODE_PID=$!
 # Wait for NameNode to start accepting connections
 echo "Waiting for NameNode to become ready..."
 for i in {1..60}; do
+    # Try multiple connection tests
     if curl -f http://localhost:9870/dfshealth.html > /dev/null 2>&1; then
         echo "NameNode is ready and accepting connections"
+        break
+    elif curl -f http://localhost:9870 > /dev/null 2>&1; then
+        echo "NameNode web interface responding"
         break
     fi
     if [ $i -eq 60 ]; then
@@ -68,19 +72,21 @@ for i in {1..60}; do
     sleep 1
 done
 
-# Create nutriweather directory structure in HDFS
-echo "Creating HDFS directory structure for NutriWeather..."
-$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/raw/meals
-$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/raw/weather
-$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/formatted/meals
-$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/formatted/weather
-$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/usage/timeseries
-$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/usage/recommendations
-$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/indexed
-$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/analytics
-$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/backup
+# Create nutriweather directory structure in HDFS with better error handling
+echo "Creating comprehensive HDFS directory structure for NutriWeather..."
+set +e  # Don't exit on directory creation errors
+$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/raw/meals || echo "Raw meals directory might already exist"
+$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/raw/weather || echo "Raw weather directory might already exist"
+$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/formatted/meals || echo "Formatted meals directory might already exist"
+$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/formatted/weather || echo "Formatted weather directory might already exist"
+$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/usage || echo "Usage directory might already exist"
+$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/indexed || echo "Indexed directory might already exist"
+$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/analytics || echo "Analytics directory might already exist"
+$HADOOP_HOME/bin/hdfs dfs -mkdir -p /nutriweather/backup || echo "Backup directory might already exist"
+set -e  # Re-enable error handling
 
-echo "HDFS directory structure created successfully"
+echo "Comprehensive HDFS directory structure created successfully"
+echo "All pipeline stages will automatically backup to appropriate HDFS directories"
 
 # Test HDFS accessibility using curl (since python3 is not available)
 echo "Testing HDFS Web UI accessibility..."
@@ -88,6 +94,16 @@ if curl -f http://localhost:9870/dfshealth.html > /dev/null 2>&1; then
     echo "✓ HDFS Web UI accessible"
 else
     echo "⚠ HDFS Web UI test failed"
+fi
+
+# Test WebHDFS API accessibility with better error handling
+echo "Testing WebHDFS API..."
+if curl -f "http://localhost:9870/webhdfs/v1/?op=LISTSTATUS" > /dev/null 2>&1; then
+    echo "✓ WebHDFS API accessible"
+elif curl -f "http://localhost:9870/webhdfs/v1/" > /dev/null 2>&1; then
+    echo "✓ WebHDFS endpoint accessible (basic)"
+else
+    echo "⚠ WebHDFS API test failed"
 fi
 
 echo "NameNode started successfully and ready for connections"

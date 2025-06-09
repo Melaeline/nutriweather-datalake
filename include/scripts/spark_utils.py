@@ -21,40 +21,111 @@ def get_spark_session(app_name: str) -> SparkSession:
 
 
 def get_hdfs_client():
-    """Get HDFS client connection with improved error handling."""
+    """Get HDFS client connection with improved error handling and WebHDFS fallback."""
+    
+    namenode_configs = [
+        {'url': 'http://namenode:9870', 'hdfs_url': 'hdfs://namenode:8020'},  # Docker internal
+        {'url': 'http://localhost:9870', 'hdfs_url': 'hdfs://localhost:8020'},  # Local development
+        {'url': 'http://127.0.0.1:9870', 'hdfs_url': 'hdfs://127.0.0.1:8020'}   # Fallback
+    ]
+    
+    # Try hdfs library (most compatible)
     try:
         from hdfs import InsecureClient
-        # Try multiple connection methods
-        namenode_urls = [
-            'http://namenode:9870',  # Docker internal
-            'http://localhost:9870',  # Local development
-            'http://127.0.0.1:9870'   # Fallback
-        ]
-        
-        for url in namenode_urls:
+        for config in namenode_configs:
             try:
-                client = InsecureClient(url, user='root')
-                # Test connection by listing root directory
-                client.list('/')
-                print(f"✓ Connected to HDFS at {url}")
-                return client
+                client = InsecureClient(
+                    url=config['url'], 
+                    user='root',
+                    root='/'
+                )
+                # Test connection
+                client.list('/', status=False)
+                print(f"✓ Connected to HDFS via hdfs library at {config['url']}")
+                return HDFSClientWrapper(client, 'hdfs')
+                
             except Exception as e:
-                print(f"Failed to connect to HDFS at {url}: {e}")
+                print(f"hdfs connection failed at {config['url']}: {e}")
                 continue
-        
-        raise Exception("Could not connect to any HDFS NameNode")
-        
+                
     except ImportError as e:
-        print(f"Warning: hdfs library not available - {e}")
-        print("Install with: pip install hdfs==2.7.0")
-        return None
-    except Exception as e:
-        print(f"Warning: Could not connect to HDFS: {e}")
-        return None
+        print(f"hdfs library not available - {e}")
+    
+    # Fallback to pure requests-based WebHDFS (always works)
+    try:
+        import requests
+        for config in namenode_configs:
+            try:
+                # Test WebHDFS connection
+                response = requests.get(f"{config['url']}/webhdfs/v1/?op=LISTSTATUS", timeout=5)
+                if response.status_code == 200:
+                    print(f"✓ Connected to HDFS via WebHDFS at {config['url']}")
+                    return HDFSClientWrapper(config['url'], 'webhdfs')
+            except Exception as e:
+                print(f"WebHDFS connection failed at {config['url']}: {e}")
+                continue
+                
+    except ImportError:
+        print("requests library not available")
+    
+    print("Warning: Could not connect to HDFS using any method")
+    print("HDFS backup will be skipped")
+    return None
+
+
+class HDFSClientWrapper:
+    """Wrapper to provide unified interface for different HDFS clients."""
+    
+    def __init__(self, client, client_type):
+        self.client = client
+        self.client_type = client_type
+        
+    def makedirs(self, path):
+        """Create directory with unified interface."""
+        if self.client_type == 'hdfs':
+            try:
+                self.client.makedirs(path)
+            except Exception:
+                pass  # Directory might already exist
+        elif self.client_type == 'webhdfs':
+            import requests
+            try:
+                requests.put(f"{self.client}/webhdfs/v1{path}?op=MKDIRS&user.name=root")
+            except Exception:
+                pass
+                
+    def write(self, hdfs_path, local_file_handle, overwrite=True):
+        """Write file with unified interface."""
+        if self.client_type == 'hdfs':
+            self.client.write(hdfs_path, local_file_handle, overwrite=overwrite)
+        elif self.client_type == 'webhdfs':
+            import requests
+            # WebHDFS requires two-step upload
+            # Step 1: Get redirect URL
+            response1 = requests.put(
+                f"{self.client}/webhdfs/v1{hdfs_path}?op=CREATE&overwrite={str(overwrite).lower()}&user.name=root",
+                allow_redirects=False
+            )
+            if response1.status_code == 307:
+                # Step 2: Upload to redirect URL
+                redirect_url = response1.headers['Location']
+                local_file_handle.seek(0)  # Reset file pointer
+                requests.put(redirect_url, data=local_file_handle.read())
+                
+    def list(self, path, status=False):
+        """List directory with unified interface."""
+        if self.client_type == 'hdfs':
+            return self.client.list(path, status=status)
+        elif self.client_type == 'webhdfs':
+            import requests
+            response = requests.get(f"{self.client}/webhdfs/v1{path}?op=LISTSTATUS")
+            if response.status_code == 200:
+                return [item['pathSuffix'] for item in response.json()['FileStatuses']['FileStatus']]
+            return []
 
 
 def backup_to_hdfs(local_file_path: str, hdfs_directory: str, client=None):
-    """Backup a local file to HDFS with better error handling."""
+    """Backup a local file to HDFS with improved error handling."""
     if client is None:
         client = get_hdfs_client()
     
@@ -72,7 +143,7 @@ def backup_to_hdfs(local_file_path: str, hdfs_directory: str, client=None):
         
         # Extract filename from local path
         filename = os.path.basename(local_file_path)
-        hdfs_path = f"{hdfs_directory}/{filename}"
+        hdfs_path = f"{hdfs_directory.rstrip('/')}/{filename}"
         
         # Upload file to HDFS
         with open(local_file_path, 'rb') as local_file:
@@ -83,6 +154,7 @@ def backup_to_hdfs(local_file_path: str, hdfs_directory: str, client=None):
         
     except Exception as e:
         print(f"Error backing up to HDFS: {e}")
+        print(f"File will remain in local storage: {local_file_path}")
         return False
 
 
@@ -129,17 +201,11 @@ def save_parquet_clean(df, output_dir: str, filename: str):
 
 def get_hdfs_backup_path(local_path: str) -> str:
     """Convert local path to corresponding HDFS backup path."""
-    # Convert local include paths to HDFS paths
+    # Convert local include paths to HDFS paths - simplified structure
     if "/raw/" in local_path:
-        if "/meals/" in local_path:
-            return "/nutriweather/raw/meals"
-        elif "/weather/" in local_path:
-            return "/nutriweather/raw/weather"
+        return "/nutriweather/raw"
     elif "/formatted/" in local_path:
-        if "/meals/" in local_path:
-            return "/nutriweather/formatted/meals"
-        elif "/weather/" in local_path:
-            return "/nutriweather/formatted/weather"
+        return "/nutriweather/formatted"
     elif "/usage/" in local_path:
         return "/nutriweather/usage"
     

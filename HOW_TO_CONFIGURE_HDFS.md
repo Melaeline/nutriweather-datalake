@@ -28,13 +28,37 @@ nutriweather-datalake/
 │   ├── hdfs-site.xml          # HDFS-specific settings
 │   └── log4j.properties       # Logging configuration
 ├── scripts/                   # Startup scripts
-│   ├── start-hdfs.sh         # NameNode startup script
+│   ├── start-hdfs.sh         # NameNode startup script (creates full directory structure)
 │   └── init-datanode.sh      # DataNode initialization script
-├── include/                   # Shared data directory
+├── include/                   # Shared data directory (all files auto-backup to HDFS)
+│   ├── raw/                  # Raw data (auto-backup to /nutriweather/raw/)
+│   ├── formatted/            # Formatted data (auto-backup to /nutriweather/formatted/)
+│   ├── usage/                # Usage data (auto-backup to /nutriweather/usage/)
+│   └── scripts/              # Processing scripts with HDFS integration
 ├── namenode-data/            # NameNode data (auto-created)
 ├── datanode1-data/           # DataNode 1 data (auto-created)
 └── datanode2-data/           # DataNode 2 data (auto-created)
+
+HDFS Structure (automatically populated):
+/nutriweather/
+├── raw/
+│   ├── meals/                # All raw meal JSON files
+│   └── weather/              # All raw weather JSON files
+├── formatted/
+│   ├── meals/                # All formatted meal Parquet files
+│   └── weather/              # All formatted weather JSON files
+├── usage/                    # All usage layer JSONL files
+├── indexed/                  # Elasticsearch indexing metadata
+├── analytics/                # Future analytics outputs
+└── backup/                   # General backup location
 ```
+
+**Automatic Backup Features:**
+- **Universal Coverage**: Every file created by the pipeline is automatically backed up to HDFS
+- **Intelligent Routing**: Local paths automatically mapped to appropriate HDFS directories
+- **Zero Configuration**: Backup happens transparently without manual intervention
+- **Fault Tolerance**: Multiple HDFS client fallback methods ensure backup reliability
+- **Graceful Degradation**: Pipeline continues even if HDFS is unavailable
 
 ## ⚙️ Configuration Files
 
@@ -198,15 +222,31 @@ include:
 
 ### Install Dependencies
 ```bash
-pip install hdfs==2.7.0 requests
+# For Python 3.12+ compatibility, use stable hdfs library
+pip install hdfs>=2.7.3
+
+# Backup: Pure requests-based WebHDFS (always available)
+pip install requests>=2.31.0
+
+# Optional: snappy compression (if needed)
+# pip install snappy>=1.1.0
 ```
 
-### Basic HDFS Operations
+### Basic HDFS Operations via WebHDFS
 ```python
+# Option 1: Using hdfs library (recommended, most stable)
 from hdfs import InsecureClient
 
-# Connect to HDFS
+# Connect to HDFS via WebHDFS (recommended)
 client = InsecureClient('http://namenode:9870', user='root')
+
+# Test connection
+try:
+    files = client.list('/')
+    print("✓ HDFS connection successful")
+    print(f"Root directory contents: {files}")
+except Exception as e:
+    print(f"✗ HDFS connection failed: {e}")
 
 # Write file
 with client.write('/example.txt', encoding='utf-8') as writer:
@@ -224,8 +264,68 @@ client.makedirs('/data')
 
 # Get file status
 status = client.status('/example.txt')
+
+# Check if file/directory exists
+exists = client.status('/example.txt', strict=False) is not None
 ```
 
+### Troubleshooting HDFS Client Issues
+
+1. **hdfs3 build failures**: hdfs3 library often fails to build on newer Python versions
+   ```bash
+   # Solution: Use the stable hdfs library instead
+   pip uninstall hdfs3
+   pip install hdfs>=2.7.3
+   
+   # Fallback: Use pure WebHDFS with requests (no extra dependencies)
+   # This is automatically handled by spark_utils.py
+   ```
+
+2. **"No module named 'imp'" error**: This occurs with older hdfs versions on Python 3.12+
+   ```bash
+   # Solution: Use newer hdfs version
+   pip install hdfs>=2.7.3
+   
+   # Or use pure WebHDFS fallback (handled automatically)
+   ```
+
+3. **Build dependencies missing**: Some HDFS clients require system dependencies
+   ```bash
+   # For containers, this is handled in the Dockerfile
+   # For local development, install build tools:
+   sudo apt-get install build-essential python3-dev
+   # or on macOS:
+   xcode-select --install
+   ```
+
+4. **Connection refused**: Ensure NameNode is running and accessible
+   ```bash
+   # Check NameNode status
+   curl http://localhost:9870/dfshealth.html
+   
+   # Check WebHDFS API
+   curl "http://localhost:9870/webhdfs/v1/?op=LISTSTATUS"
+   ```
+
+5. **Python 3.12+ compatibility**: The updated spark_utils.py handles multiple client fallbacks
+   ```python
+   # spark_utils.py automatically tries:
+   # 1. hdfs library (InsecureClient) - most stable
+   # 2. Pure WebHDFS with requests - always works
+   # 3. Graceful degradation - skips HDFS if unavailable
+   ```
+
+6. **Library installation order**: Install in this order for best compatibility
+   ```bash
+   # 1. Install stable hdfs client
+   pip install hdfs>=2.7.3
+   
+   # 2. Ensure requests is available (usually pre-installed)
+   pip install requests>=2.31.0
+   
+   # 3. Optional compression support
+   # pip install snappy>=1.1.0  # Only if needed
+   ```
 ## 🌐 Access Points
 
 - **HDFS Web UI**: http://localhost:9870

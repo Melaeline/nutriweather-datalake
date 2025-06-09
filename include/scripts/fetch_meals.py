@@ -6,7 +6,7 @@ import requests
 import json
 import string
 from datetime import datetime
-from spark_utils import get_spark_session, ensure_directory
+from spark_utils import get_spark_session, ensure_directory, save_with_hdfs_backup
 from pyspark.sql.functions import explode, col
 
 
@@ -53,8 +53,7 @@ def main():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file = f"{output_dir}/raw_meals_{timestamp}.json"
         
-        # Use the new save_with_hdfs_backup function
-        from spark_utils import save_with_hdfs_backup
+        # Use the save_with_hdfs_backup function
         save_with_hdfs_backup(
             output_file,
             {

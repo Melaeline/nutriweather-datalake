@@ -100,14 +100,15 @@ def main():
         output_dir = "/usr/local/airflow/include/raw/weather"
         ensure_directory(output_dir)
         
-        # Save raw weather data
+        # Save raw weather data with HDFS backup
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file = f"{output_dir}/raw_weather_{timestamp}.json"
         
-        with open(output_file, 'w') as f:
-            json.dump(weather_data, f, indent=2)
+        # Use the new save_with_hdfs_backup function
+        from spark_utils import save_with_hdfs_backup
+        save_with_hdfs_backup(output_file, weather_data, "json")
         
-        print(f"Raw weather data saved to: {output_file}")
+        print(f"Raw weather data saved locally and backed up to HDFS: {output_file}")
         
         # Spark validation
         df = spark.read.json(spark.sparkContext.parallelize([json.dumps(weather_data)]))

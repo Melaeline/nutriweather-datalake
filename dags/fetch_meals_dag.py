@@ -21,7 +21,7 @@ dag = DAG(
 
 @task(dag=dag)
 def fetch_meals_data() -> str:
-    """Fetch all meals from TheMealDB API."""
+    """Fetch all meals from TheMealDB API with HDFS backup."""
     all_meals = []
     meal_ids = set()
     
@@ -41,24 +41,38 @@ def fetch_meals_data() -> str:
         except requests.RequestException as e:
             print(f"Error fetching meals for letter '{letter}': {e}")
     
-    # Save raw data
+    # Save raw data with HDFS backup
     meals_dir = f"{RAW_DIR}/meals"
     os.makedirs(meals_dir, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filepath = os.path.join(meals_dir, f"raw_meals_{timestamp}.json")
     
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump({"total_meals": len(all_meals), "meals": all_meals}, f, indent=2)
+    # Import HDFS backup function
+    import sys
+    sys.path.append('/usr/local/airflow/include/scripts')
+    from spark_utils import save_with_hdfs_backup
     
-    print(f"Saved {len(all_meals)} meals to {filepath}")
+    # Save with HDFS backup
+    save_with_hdfs_backup(
+        filepath,
+        {
+            "total_meals": len(all_meals),
+            "fetch_timestamp": timestamp,
+            "meals": all_meals
+        },
+        "json"
+    )
+    
+    print(f"Saved {len(all_meals)} meals locally and backed up to HDFS: {filepath}")
     return filepath
 
 # Tasks
 fetch_task = fetch_meals_data()
 trigger_task = create_trigger_task(
     task_id="trigger_format_meals",
-    target_dag_id="format_meals_dag"
+    target_dag_id="format_meals_dag",
+    dag=dag
 )
 
 # Dependencies

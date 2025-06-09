@@ -82,9 +82,9 @@ A comprehensive data engineering project that combines weather data with meal re
 ### Stage 1: Data Ingestion (Raw Layer)
 ```
 fetch_meals_data() → /include/raw/meals/raw_meals_YYYYMMDD_HHMMSS.json
-                  → HDFS: /nutriweather/raw/meals/
+                  → HDFS: /nutriweather/raw/ (automatic backup)
 fetch_weather_data() → /include/raw/weather/raw_weather_YYYYMMDD_HHMMSS.json
-                    → HDFS: /nutriweather/raw/weather/
+                    → HDFS: /nutriweather/raw/ (automatic backup)
 ```
 
 **Raw Data Structures:**
@@ -92,14 +92,14 @@ fetch_weather_data() → /include/raw/weather/raw_weather_YYYYMMDD_HHMMSS.json
 - **Weather**: Structured JSON with metadata, current, hourly, and daily sections
 - **Retention**: All raw files preserved locally and in HDFS for reprocessing
 - **HDFS Storage**: Distributed storage with 2x replication for fault tolerance
-- **Automatic Backup**: Every raw file is automatically backed up to HDFS upon creation
+- **Automatic Backup**: Every raw file is automatically backed up to HDFS upon creation using `save_with_hdfs_backup()`
 
 ### Stage 2: Data Transformation (Formatted Layer)
 ```
 format_meals.py → /include/formatted/meals/formatted_meals_YYYYMMDD_HHMMSS.parquet
-              → HDFS: /nutriweather/formatted/meals/
+              → HDFS: /nutriweather/formatted/ (automatic backup)
 format_weather.py → /include/formatted/weather/formatted_weather_YYYYMMDD_HHMMSS.json
-                 → HDFS: /nutriweather/formatted/weather/
+                 → HDFS: /nutriweather/formatted/ (automatic backup)
 ```
 
 **Transformations Applied:**
@@ -109,26 +109,26 @@ format_weather.py → /include/formatted/weather/formatted_weather_YYYYMMDD_HHMM
   - Instruction cleaning and formatting
   - Category and region standardization
   - Clean single-file Parquet output (no Spark artifacts)
-  - **HDFS Integration**: Automatic backup to distributed storage
+  - **HDFS Integration**: Automatic backup via `save_parquet_clean()` function
 - **Weather Processing**:
   - Location name enrichment via reverse geocoding
   - Timestamp standardization (ISO 8601)
   - Data validation and type conversion
-  - **HDFS Archival**: Long-term storage for historical analysis
+  - **HDFS Archival**: Automatic backup via `save_with_hdfs_backup()` function
 
 **File Architecture:**
 - **Local Output**: Single parquet files without `_SUCCESS` or partition artifacts
-- **HDFS Mirror**: Distributed copies for high availability
+- **HDFS Mirror**: Distributed copies for high availability via unified backup functions
 - **Consistent Naming**: `formatted_meals_YYYYMMDD_HHMMSS.parquet` format
 - **Cross-Platform Access**: Available via local filesystem and HDFS API
 - **Automatic Replication**: HDFS ensures 2x replication across DataNodes
+- **Universal Backup**: All files backed up using standardized `spark_utils` functions
 
 ### Stage 3: Data Integration (Usage Layer)
 ```
 merge_formatted.py → /include/usage/temperature_timeseries_YYYYMMDD_HHMMSS.jsonl
                   → /include/usage/enhanced_recommendations_YYYYMMDD_HHMMSS.jsonl
-                  → HDFS: /nutriweather/usage/timeseries/
-                  → HDFS: /nutriweather/usage/recommendations/
+                  → HDFS: /nutriweather/usage/ (automatic backup for both files)
 ```
 
 **Output Formats:**
@@ -156,13 +156,26 @@ merge_formatted.py → /include/usage/temperature_timeseries_YYYYMMDD_HHMMSS.jso
    }
    ```
 
+**HDFS Backup Strategy:**
+- **Real-time Backup**: Every file is automatically backed up to HDFS immediately after creation
+- **Unified Functions**: All scripts use standardized `save_with_hdfs_backup()` and `backup_to_hdfs()` functions
+- **Intelligent Routing**: HDFS paths determined automatically based on local file structure
+- **Error Resilience**: Pipeline continues even if HDFS backup fails (graceful degradation)
+
 ### Stage 4: Data Indexing (Elasticsearch)
 ```
 index_elasticsearch.py → Elasticsearch indices:
                        → nutriweather_temperature
                        → nutriweather_enhanced
-                       → HDFS: /nutriweather/indexed/ (metadata)
+                       → HDFS: /nutriweather/indexed/ (metadata backup)
 ```
+
+**Complete HDFS Integration:**
+- **100% Coverage**: All raw, formatted, and usage files automatically backed up
+- **No Manual Steps**: Backup happens transparently during normal pipeline execution
+- **Fault Tolerance**: HDFS client with multiple connection fallback methods
+- **Cross-Platform**: Works with hdfs library, WebHDFS, and pure requests fallback
+- **Disaster Recovery**: Complete pipeline can be restored from HDFS if local storage fails
 
 ## 🗂️ File Formats & Data Organization
 
@@ -179,16 +192,11 @@ Local Storage (/usr/local/airflow/include/):
 └── scripts/             # Python processing modules
 
 HDFS Storage (/nutriweather/):
-├── raw/
-│   ├── meals/           # Archived raw meal data (auto-synced)
-│   └── weather/         # Archived raw weather data (auto-synced)
-├── formatted/
-│   ├── meals/           # Processed parquet files (auto-synced)
-│   └── weather/         # Enhanced weather JSON files (auto-synced)
-├── usage/
-│   ├── timeseries/      # Temperature time series data (auto-synced)
-│   └── recommendations/ # Enhanced meal recommendations (auto-synced)
-└── indexed/             # Elasticsearch indexing metadata
+├── raw/                 # All raw data files (meals + weather)
+├── formatted/           # All formatted data files (meals + weather)
+├── usage/               # All usage layer files (timeseries + recommendations)
+├── indexed/             # Elasticsearch indexing metadata
+└── backup/              # General backup location
 ```
 
 ### HDFS Integration Benefits
