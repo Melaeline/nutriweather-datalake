@@ -1,281 +1,444 @@
 # NutriWeather Data Lake
 
-A robust data lake and analytics pipeline that integrates nutritional meal data with weather information to enable cross-domain analytics for agricultural, dietary, and environmental insights.
+A comprehensive data engineering project that combines weather data with meal recommendations using Apache Airflow, Apache Spark, and Elasticsearch. This pipeline fetches real-time weather data and meal information, processes them through multiple stages, and provides intelligent meal recommendations based on current weather conditions.
 
----
-
-## 🚀 Overview
-
-NutriWeather Data Lake is a modular, production-ready data pipeline built on **Apache Airflow** and **Apache Spark**. It ingests, processes, and merges data from public APIs (TheMealDB and Open-Meteo), producing analytical datasets for downstream applications.
-
----
-
-## 🏗️ Architecture
-
-### High-Level Pipeline
+## 🏗️ Architecture Overview
 
 ```
-Raw Data Sources
-├── TheMealDB API (Meal Data)
-└── Open-Meteo API (Weather Data)
-       ↓
-Airflow DAGs (Orchestration)
-├── fetch_meals.py
-├── fetch_weather.py
-├── format_meals.py
-├── format_weather.py
-└── merge_formatted.py
-       ↓
-Data Lake Storage (Local FS or Volume)
-├── include/raw/         # Raw API data
-├── include/formatted/   # Cleaned/structured data
-└── include/usage/       # Analytical/merged outputs
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Data Sources  │    │   Processing    │    │    Storage &    │
+│                 │    │    Pipeline     │    │  Visualization  │
+├─────────────────┤    ├─────────────────┤    ├─────────────────┤
+│ Open-Meteo API │────▶│ Apache Airflow  │────▶│ Elasticsearch   │
+│ TheMealDB API   │    │ Apache Spark    │    │ Kibana          │
+│ OSM Nominatim   │    │ PySpark         │    │ JSONL Files     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
-### Data Flow
+## 🛠️ Technology Stack
 
-1. **Ingestion**: Fetches meal and weather data from APIs.
-2. **Formatting**: Cleans, enriches, and structures data using PySpark.
-3. **Merging**: Combines meal and weather data for analytics.
-4. **Analytics**: Enables cross-domain queries and insights.
+### Core Technologies
+- **Apache Airflow 2.9.2** - Workflow orchestration and scheduling
+- **Apache Spark 3.5.6** - Distributed data processing
+- **PySpark** - Python API for Spark
+- **Elasticsearch 8.15.0** - Search and analytics engine
+- **Kibana 8.15.0** - Data visualization and exploration
+- **Docker & Docker Compose** - Containerization and orchestration
 
----
+### Development & Runtime
+- **Astronomer Runtime 3.0-2** - Airflow distribution
+- **Python 3.11+** - Primary programming language
+- **OpenJDK 17** - Java runtime for Spark
+- **Bitnami Spark Images** - Pre-configured Spark containers
 
-## 🧰 Technologies & Tools
+### Data Processing Libraries
+- **pandas 1.5.0+** - Data manipulation and analysis
+- **pyarrow 10.0.0+** - Columnar data format support
+- **numpy 1.26.0+** - Numerical computing
+- **requests 2.31.0+** - HTTP client library
 
-| Technology         | Role/Usage                                                                                   |
-|--------------------|---------------------------------------------------------------------------------------------|
-| **Apache Airflow** | Workflow orchestration, DAG scheduling, monitoring, and dependency management               |
-| **Apache Spark**   | Distributed data processing (ETL, transformation, Parquet/JSON handling)                    |
-| **Python 3.8+**    | Core programming language for all scripts and orchestration                                 |
-| **Pandas**         | Data manipulation for smaller datasets (e.g., weather formatting)                           |
-| **Requests**       | HTTP client for API integration (TheMealDB, Open-Meteo, Nominatim)                          |
-| **openmeteo-requests** | Specialized client for Open-Meteo API                                                   |
-| **requests-cache** | Caching for API calls (weather geocoding)                                                   |
-| **retry-requests** | Robustness for API calls (automatic retries)                                                |
-| **Parquet**        | Efficient columnar storage for formatted meal data                                          |
-| **JSON**           | Standard format for weather and merged outputs                                              |
-| **Elasticsearch**  | (Optional) For indexing and search (see Airflow 3 upgrade notes)                           |
+### API Integration
+- **openmeteo-requests 1.1.0+** - Weather API client
+- **requests-cache 1.1.0+** - HTTP request caching
+- **retry-requests 2.0.0+** - Request retry mechanism
 
----
+## 🌐 External APIs
 
-## 📁 Project Structure
+### 1. Open-Meteo Weather API
+- **Endpoint**: `https://api.open-meteo.com/v1/forecast`
+- **Purpose**: Real-time weather data collection
+- **Data Retrieved**:
+  - Current temperature, humidity, wind speed
+  - Hourly temperature forecasts
+  - Daily UV index maximum
+  - Location metadata (coordinates, timezone)
+- **Rate Limits**: Free tier, no authentication required
+- **Coverage**: Global weather data with high accuracy
 
+### 2. TheMealDB API
+- **Endpoint**: `https://www.themealdb.com/api/json/v1/1`
+- **Purpose**: Comprehensive meal database access
+- **Data Retrieved**:
+  - Meal names, categories, and regions
+  - Detailed cooking instructions
+  - Ingredient lists with measurements
+  - Meal thumbnails and metadata
+- **Coverage**: 1000+ international recipes
+- **Search Method**: Alphabetical iteration (a-z) for complete dataset
+
+### 3. OpenStreetMap Nominatim
+- **Endpoint**: `https://nominatim.openstreetmap.org/reverse`
+- **Purpose**: Reverse geocoding for location names
+- **Usage**: Convert coordinates to human-readable locations
+- **Rate Limits**: 1 request per second (implemented with delays)
+
+## 📊 Data Pipeline Flow
+
+### Stage 1: Data Ingestion (Raw Layer)
 ```
-nutriweather-datalake/
-├── dags/                           # Airflow DAG definitions (Python)
-│   ├── fetch_meals_dag.py
-│   ├── fetch_weather_dag.py
-│   ├── format_meals_dag.py
-│   ├── format_weather_dag.py
-│   └── merge_formatted_dag.py
-├── include/
-│   ├── scripts/                    # Data processing scripts (Python)
-│   │   ├── fetch_meals.py
-│   │   ├── fetch_weather.py
-│   │   ├── format_meals.py
-│   │   ├── format_weather.py
-│   │   └── merge_formatted.py
-│   ├── raw/                        # Raw data storage (JSON)
-│   │   ├── meals/
-│   │   └── weather/
-│   ├── formatted/                  # Processed data storage
-│   │   ├── meals/                  # Parquet files
-│   │   ├── weather/                # JSON files
-│   │   └── merged/                 # (Optional) Merged datasets
-│   ├── usage/                      # Final merged analytics outputs (JSON)
-│   ├── logs/                       # Processing logs
-│   └── advice_dataset.csv          # Meal/weather advice mapping
-├── requirements.txt                # Python dependencies
-├── README.md                       # Project documentation
-└── AIRFLOW_3_UPGRADE_NOTES.md      # Upgrade notes for Airflow 3.x
+fetch_meals_data() → /include/raw/meals/raw_meals_YYYYMMDD_HHMMSS.json
+fetch_weather_data() → /include/raw/weather/raw_weather_YYYYMMDD_HHMMSS.json
 ```
 
----
+**Raw Data Structures:**
+- **Meals**: Complete TheMealDB API response with 50+ fields per meal
+- **Weather**: Structured JSON with metadata, current, hourly, and daily sections
+- **Retention**: All raw files preserved for reprocessing
 
-## ⚙️ Configuration & Setup
+### Stage 2: Data Transformation (Formatted Layer)
+```
+format_meals.py → /include/formatted/meals/formatted_meals_YYYYMMDD_HHMMSS.parquet
+format_weather.py → /include/formatted/weather/formatted_weather_YYYYMMDD_HHMMSS.json
+```
+
+**Transformations Applied:**
+- **Meals Processing**:
+  - Ingredient consolidation (20 ingredient fields → single array)
+  - Preparation time estimation algorithm
+  - Instruction cleaning and formatting
+  - Category and region standardization
+- **Weather Processing**:
+  - Location name enrichment via reverse geocoding
+  - Timestamp standardization (ISO 8601)
+  - Data validation and type conversion
+
+### Stage 3: Data Integration (Usage Layer)
+```
+merge_formatted.py → /include/usage/temperature_timeseries_YYYYMMDD_HHMMSS.jsonl
+                  → /include/usage/enhanced_recommendations_YYYYMMDD_HHMMSS.jsonl
+```
+
+**Output Formats:**
+1. **Temperature Time Series** (JSONL):
+   ```json
+   {
+     "@timestamp": "2024-12-19 15:30:00",
+     "temperature": 18.5,
+     "location": "Paris, France",
+     "latitude": 48.8534,
+     "longitude": 2.3488
+   }
+   ```
+
+2. **Enhanced Recommendations** (JSONL):
+   ```json
+   {
+     "@timestamp": "2024-12-19 15:30:00",
+     "current_temperature": 18.5,
+     "temperature_category": "moderate",
+     "suggested_meal": "Beef Bourguignon",
+     "preparation_time": "45 minutes",
+     "recommended_advice": "Great weather for hearty meals!",
+     "location": "Paris, France"
+   }
+   ```
+
+### Stage 4: Data Indexing (Elasticsearch)
+```
+index_elasticsearch.py → Elasticsearch indices:
+                       → nutriweather_temperature
+                       → nutriweather_enhanced
+```
+
+## 🗂️ File Formats & Data Organization
+
+### Directory Structure
+```
+/usr/local/airflow/include/
+├── raw/
+│   ├── meals/           # JSON files from TheMealDB API
+│   └── weather/         # JSON files from Open-Meteo API
+├── formatted/
+│   ├── meals/           # Parquet files (optimized for Spark)
+│   └── weather/         # JSON files (enriched with location data)
+├── usage/               # JSONL files (Elasticsearch-ready)
+└── scripts/             # Python processing modules
+```
+
+### File Naming Convention
+- **Pattern**: `{type}_{category}_{YYYYMMDD_HHMMSS}.{extension}`
+- **Example**: `formatted_meals_20241219_153045.parquet`
+- **Benefits**: Chronological sorting, easy latest file identification
+
+### Format Justifications
+- **Raw → JSON**: Preserves original API response structure
+- **Formatted Meals → Parquet**: Columnar format optimized for Spark operations
+- **Formatted Weather → JSON**: Maintains nested structure for complex weather data
+- **Usage → JSONL**: Elasticsearch bulk indexing compatibility
+
+## 🚀 DAG Execution & Orchestration
+
+### Primary DAG: `start_pipeline_dag`
+**Trigger**: Manual execution or API call
+**Schedule**: On-demand (no automatic scheduling)
+**Max Active Runs**: 1 (prevents concurrent executions)
+
+#### Task Dependencies
+```mermaid
+graph TD
+    A[fetch_meals_data] --> C[format_meals_data]
+    B[fetch_weather_data] --> D[format_weather_data]
+    C --> E[merge_formatted_data]
+    D --> E
+    E --> F[trigger_elasticsearch_indexing]
+```
+
+#### Task Details
+1. **fetch_meals_data** (Python Task)
+   - Runtime: ~2-3 minutes
+   - Memory usage: ~200MB
+   - Output: ~1000 meals in JSON format
+
+2. **fetch_weather_data** (Bash → Python Script)
+   - Runtime: ~10-15 seconds
+   - API calls: 1 request to Open-Meteo
+   - Output: Current + 24h forecast data
+
+3. **format_meals_data** (Spark Job)
+   - Runtime: ~30-45 seconds
+   - Spark cluster: 1 master + 1 worker (2GB memory)
+   - Operations: DataFrame transformations, UDF applications
+
+4. **format_weather_data** (Python Script)
+   - Runtime: ~5-10 seconds
+   - External API: Nominatim reverse geocoding
+   - Enhancement: Location name resolution
+
+5. **merge_formatted_data** (Spark + Python)
+   - Runtime: ~15-20 seconds
+   - Logic: Weather-meal recommendation matching
+   - Output: Two JSONL files for different use cases
+
+6. **trigger_elasticsearch_indexing** (TriggerDAG)
+   - Triggers: `index_elasticsearch_dag`
+   - Wait for completion: True
+   - Bulk indexing: Both temperature and enhanced datasets
+
+### Secondary DAG: `index_elasticsearch_dag`
+**Purpose**: Elasticsearch data indexing
+**Trigger**: Called by primary DAG
+**Features**: 
+- Index creation with optimized mappings
+- Bulk document indexing
+- Error handling and retry logic
+
+## 🐳 Docker Environment Setup
+
+### Container Architecture
+```yaml
+Services:
+├── Airflow Scheduler     # DAG scheduling and monitoring
+├── Airflow Webserver     # Web UI (localhost:8080)
+├── Airflow Worker        # Task execution
+├── PostgreSQL           # Airflow metadata storage
+├── Elasticsearch        # Search and analytics (localhost:9200)
+├── Kibana              # Visualization dashboard (localhost:5601)
+├── Spark Master        # Cluster coordination (localhost:8082)
+└── Spark Worker        # Distributed computing (2GB memory)
+```
+
+### Volume Mappings
+- **Airflow**: `/usr/local/airflow/include` → Local `./include`
+- **Spark**: `/opt/spark-apps` → Local `./apps`
+- **Elasticsearch**: Persistent data volumes for index storage
+
+### Network Configuration
+- **Internal Network**: `airflow` (Docker Compose network)
+- **Service Discovery**: Container name-based DNS resolution
+- **Port Exposure**: Only web interfaces exposed to host
+
+## 🔧 Development Setup
 
 ### Prerequisites
+- Docker Desktop 4.0+
+- Docker Compose V2
+- 8GB+ available RAM
+- 10GB+ free disk space
 
-- **Python**: 3.8 or newer
-- **Apache Airflow**: 2.x or 3.x (see upgrade notes)
-- **Apache Spark**: 3.x (local or cluster)
-- **pip**: For Python package management
+### Installation & Startup
+```bash
+# Clone repository
+git clone <repository-url>
+cd nutriweather-datalake
 
-### Installation
+# Start all services
+docker-compose up -d
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/your-org/nutriweather-datalake.git
-   cd nutriweather-datalake
-   ```
+# Monitor logs
+docker-compose logs -f
 
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure Airflow**
-   - Set `AIRFLOW_HOME` to the absolute path of the project directory or desired location.
-   - Point Airflow to the `dags/` directory:
-     ```bash
-     export AIRFLOW_HOME=$(pwd)
-     export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/dags
-     ```
-
-4. **Configure Spark**
-   - Set `SPARK_HOME` if running Spark locally.
-   - Ensure `pyspark` is installed and available.
-
-5. **Start Airflow**
-   ```bash
-   airflow db init
-   airflow scheduler &
-   airflow webserver &
-   ```
-
----
-
-## 🔗 API Integrations
-
-- **TheMealDB**: `https://www.themealdb.com/api/json/v1/1/`
-- **Open-Meteo**: `https://api.open-meteo.com/v1/forecast`
-- **Nominatim (OpenStreetMap)**: For reverse geocoding weather locations
-
----
-
-## 🛠️ Airflow DAGs & Scripts
-
-| DAG Name              | Script                      | Description                                               |
-|-----------------------|----------------------------|-----------------------------------------------------------|
-| `fetch_meals_dag`     | `fetch_meals.py`           | Fetches meal data from TheMealDB API                      |
-| `fetch_weather_dag`   | `fetch_weather.py`         | Fetches weather data from Open-Meteo API                  |
-| `format_meals_dag`    | `format_meals.py`          | Formats and enriches meal data, outputs Parquet           |
-| `format_weather_dag`  | `format_weather.py`        | Formats weather data, outputs JSON                        |
-| `merge_formatted_dag` | `merge_formatted.py`       | Merges meal and weather data for analytics                |
-
-- **All DAGs** are orchestrated via Airflow and can be triggered manually or scheduled.
-- **Scripts** are invoked by Airflow's `BashOperator` and run in the Airflow environment.
-
----
-
-## 📊 Data Schema
-
-### Temperature Time-Series Records (JSONL)
-
-For time-series analysis and temperature trends:
-
-```json
-{"@timestamp": "2024-01-01 01:00:00", "temperature": 22.3, "timezone": "Europe/Paris", "location": "Paris, France", "latitude": 48.85, "longitude": 2.35}
+# Access services
+# Airflow: http://localhost:8080 (admin/admin)
+# Kibana: http://localhost:5601
+# Spark UI: http://localhost:8082
+# Elasticsearch: http://localhost:9200
 ```
 
-### Enhanced Recommendation Records (JSONL)
+### Astro CLI Integration
+```bash
+# Install Astro CLI
+curl -sSL install.astronomer.io | sudo bash
 
-For dashboarding and meal recommendations:
+# Initialize Airflow project
+astro dev init
 
-```json
-{"@timestamp": "2024-01-01 03:45:12", "timezone": "Europe/Paris", "current_temperature": 25.1, "relative_humidity": 58.0, "wind_speed": 17.6, "location": "Paris, France", "latitude": 48.85, "longitude": 2.35, "recommended_advice": "Great weather for hearty meals and moderate cooking. Enjoy balanced nutrition!", "temperature_category": "moderate", "uv_index_max": 7.0, "suggested_meal": "Lasagna", "preparation_time": "45 minutes", "instructions": "Preheat oven to 180°C. Cook the meat and onions...", "ingredients": "Ground beef, onions, tomato sauce...", "meal_category": "Vegetarian", "meal_region": "Mexican"}
+# Start development environment
+astro dev start
+
+# Deploy to production
+astro deploy
 ```
 
----
+## 📈 Monitoring & Observability
 
-## 🗄️ Data Storage
+### Airflow Monitoring
+- **Web UI**: Task status, logs, execution history
+- **Metrics**: Task duration, success rate, resource usage
+- **Alerting**: Email notifications on failure (configurable)
 
-- **Raw Data**: `include/raw/`
-  - Meals: JSON files from TheMealDB
-  - Weather: JSON files from Open-Meteo
-- **Formatted Data**: `include/formatted/`
-  - Meals: Parquet files (columnar, efficient for analytics)
-  - Weather: JSON files (structured, time-series)
-- **Usage Data**: `include/usage/`
-  - Temperature time-series: JSONL files for Elasticsearch indexing with timezone support
-  - Enhanced recommendations: JSONL files for Kibana dashboarding with complete weather and meal data
+### Spark Monitoring
+- **Spark UI**: Job execution, stage details, executor status
+- **Metrics**: Memory usage, task distribution, shuffle operations
+- **Logs**: Driver and executor logs via Docker
 
----
+### Elasticsearch Health
+- **Cluster Health**: `GET /_cluster/health`
+- **Index Statistics**: `GET /_stats`
+- **Document Counts**: Real-time via Kibana dashboards
 
-## 📊 Elasticsearch Integration
-
-The pipeline produces two types of records optimized for Elasticsearch:
-
-### Temperature Index (`nutriweather_temperature`)
-- Time-series temperature data with timezone support
-- Optimized for trend analysis and monitoring
-- Fields: `@timestamp`, `temperature`, `timezone`, `location`, `latitude`, `longitude`
-
-### Enhanced Index (`nutriweather_enhanced`)
-- Complete weather + meal recommendations with advice dataset integration
-- Optimized for dashboarding and insights
-- Fields: `@timestamp`, `timezone`, `current_temperature`, `relative_humidity`, `wind_speed`, `location`, `latitude`, `longitude`, `recommended_advice`, `temperature_category`, `uv_index_max`, `suggested_meal`, `preparation_time`, `instructions`, `ingredients`, `meal_category`, `meal_region`
+## 🔍 Data Analysis & Visualization
 
 ### Kibana Dashboards
-- **Temperature Trends**: Time-series visualizations with timezone-aware data
-- **Meal Recommendations**: Current conditions and suggestions with detailed meal information
-- **Geographic Analysis**: Location-based weather patterns
-- **Nutritional Insights**: Meal category and region analysis with preparation details
+1. **Temperature Trends**: Time-series visualization of temperature data
+2. **Meal Recommendations**: Distribution of suggested meals by weather
+3. **Location Analytics**: Geographic distribution of weather data
+4. **System Health**: Pipeline execution metrics and error rates
 
----
+### Sample Queries
+```javascript
+// Find meals recommended for cold weather
+GET nutriweather_enhanced/_search
+{
+  "query": {
+    "range": {
+      "current_temperature": { "lt": 10 }
+    }
+  }
+}
 
-## 📝 How to Run the Pipeline
+// Temperature trends for last 24 hours
+GET nutriweather_temperature/_search
+{
+  "query": {
+    "range": {
+      "@timestamp": {
+        "gte": "now-24h"
+      }
+    }
+  },
+  "sort": [{ "@timestamp": "desc" }]
+}
+```
 
-1. **Trigger DAGs in Order** (via Airflow UI or CLI):
-   - `fetch_meals_dag`
-   - `fetch_weather_dag`
-   - `format_meals_dag`
-   - `format_weather_dag`
-   - `merge_formatted_dag`
+## 🚨 Error Handling & Recovery
 
-2. **Outputs**:
-   - Formatted meals: `include/formatted/meals/`
-   - Formatted weather: `include/formatted/weather/`
-   - Merged analytics: `include/usage/`
+### Retry Mechanisms
+- **Airflow Tasks**: 2 retries with 5-minute delays
+- **API Requests**: Exponential backoff with retry-requests
+- **Spark Jobs**: Automatic task retry on executor failure
 
----
+### Data Validation
+- **Schema Validation**: Spark DataFrame schema enforcement
+- **Null Checks**: Required field validation before processing
+- **API Response Validation**: HTTP status and content verification
 
-## 🧪 Testing & Monitoring
+### Monitoring Alerts
+- **Failed Tasks**: Immediate notification via Airflow
+- **Service Health**: Docker container health checks
+- **Data Quality**: Custom validation rules in processing scripts
 
-- **Airflow UI**: Monitor DAG runs, task logs, and failures.
-- **Logs**: All scripts log to stdout and `include/logs/`.
-- **Data Quality**: Scripts include basic validation and error handling.
-- **Manual Testing**: Run scripts directly for debugging.
+## 🎯 Use Cases & Applications
 
----
+### Business Intelligence
+- **Weather-Food Correlation Analysis**: Understand eating patterns vs. weather
+- **Seasonal Menu Planning**: Restaurant menu optimization
+- **Supply Chain**: Weather-based ingredient demand forecasting
 
-## 🔒 Security & Best Practices
+### Personal Applications
+- **Smart Meal Planning**: Automated meal suggestions based on weather
+- **Health & Nutrition**: Weather-appropriate nutrition recommendations
+- **Recipe Discovery**: Context-aware recipe recommendations
 
-- **API Keys**: Not required for public APIs used.
-- **Isolation**: All processing is local to the Airflow environment.
-- **Error Handling**: Robust exception handling in all scripts.
+### Data Science Projects
+- **Machine Learning**: Weather-food preference modeling
+- **Predictive Analytics**: Meal demand forecasting
+- **Time Series Analysis**: Weather pattern correlation with food choices
 
----
+## 📝 Configuration Management
 
-## 🌠 Astro CLI for Airflow Containers & Configuration
+### Environment Variables
+```yaml
+# Airflow Configuration
+AIRFLOW_UID: 50000
+AIRFLOW_HOME: /usr/local/airflow
 
-[Astro CLI](https://docs.astronomer.io/astro/cli/overview) is a tool for creating, managing, and deploying Airflow environments using containers. It is **not** a frontend or dashboarding framework. Instead, Astro CLI helps you:
+# Spark Configuration
+SPARK_MASTER_URL: spark://spark-master:7077
+SPARK_WORKER_MEMORY: 2G
 
-- Initialize and configure Airflow projects
-- Build and run Airflow containers locally or in the cloud
-- Manage Airflow dependencies and environment variables
-- Simplify Airflow deployment and orchestration
+# Elasticsearch Configuration
+ELASTICSEARCH_HOSTS: http://es01:9200
+```
 
-**How to use Astro CLI with NutriWeather Data Lake:**
-1. Install the Astro CLI (`pip install astro-cli` or see Astro docs).
-2. Use `astro dev init` to scaffold an Airflow project.
-3. Place your DAGs and scripts in the appropriate directories.
-4. Use `astro dev start` to launch Airflow in containers for local development.
-5. Configure Airflow environment variables and connections as needed.
+### Connection Management
+- **Spark Connection**: `spark://spark-master:7077`
+- **Elasticsearch Connection**: `http://es01:9200`
+- **External APIs**: No authentication required (free tiers)
 
-> **Note:** Astro CLI is for Airflow infrastructure management. For frontend/dashboarding, use a separate framework (e.g., Astro web framework, React, etc.) if desired.
+## 🔮 Future Enhancements
 
-Astro CLI is optional but recommended for teams seeking robust, containerized Airflow development and deployment.
+### Planned Features
+- **Machine Learning Integration**: Scikit-learn meal preference models
+- **Real-time Streaming**: Apache Kafka for live weather updates
+- **Geographic Expansion**: Multi-city weather and regional cuisine
+- **Mobile API**: REST API for mobile application integration
 
----
+### Scalability Improvements
+- **Spark Cluster Expansion**: Multi-worker Spark setup
+- **Elasticsearch Clustering**: Multi-node ES cluster
+- **Airflow Scaling**: Kubernetes deployment with auto-scaling
+- **Data Partitioning**: Date-based partitioning for large datasets
 
-## 🔗 References
+## 📚 Additional Resources
 
+### Documentation Links
 - [Apache Airflow Documentation](https://airflow.apache.org/docs/)
-- [Apache Spark Documentation](https://spark.apache.org/docs/latest/)
-- [TheMealDB API](https://www.themealdb.com/api.php)
+- [Apache Spark Programming Guide](https://spark.apache.org/docs/latest/programming-guide.html)
+- [Elasticsearch Reference](https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html)
+- [Astronomer Documentation](https://docs.astronomer.io/)
+
+### API Documentation
 - [Open-Meteo API](https://open-meteo.com/en/docs)
-- [OpenStreetMap Nominatim](https://nominatim.org/release-docs/latest/api/Reverse/)
+- [TheMealDB API](https://www.themealdb.com/api.php)
+- [Nominatim API](https://nominatim.org/release-docs/latest/api/Overview/)
+
+## 🤝 Contributing
+
+### Development Workflow
+1. Fork repository and create feature branch
+2. Implement changes with comprehensive testing
+3. Update documentation and README
+4. Submit pull request with detailed description
+
+### Code Standards
+- **Python**: PEP 8 compliance with black formatting
+- **Spark**: Efficient DataFrame operations, avoid collect()
+- **Documentation**: Comprehensive docstrings and comments
+- **Testing**: Unit tests for critical processing functions
 
 ---
+
+**Project Maintainer**: NutriWeather Team  
+**Last Updated**: December 2024  
+**License**: MIT License
+```
