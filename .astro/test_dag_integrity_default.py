@@ -106,7 +106,7 @@ def get_import_errors():
         dag_bag = DagBag(include_examples=False)
 
         def strip_path_prefix(path):
-            return os.path.relpath(path, os.environ.get("AIRFLOW_HOME"))
+            return os.path.relpath(os.path.abspath(path), os.path.abspath(os.environ.get("AIRFLOW_HOME")))
 
         # Initialize an empty list to store the tuples
         result = []

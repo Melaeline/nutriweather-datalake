@@ -1,46 +1,29 @@
 """
-## Enhanced Weather Data Fetch DAG
-
-This DAG fetches comprehensive weather data from Open-Meteo API using the openmeteo_requests client.
-It extracts current weather conditions, hourly temperature forecasts, and daily UV index data.
-The data is saved in both raw and formatted structures using multiple formats (JSON, CSV, Parquet).
-
-This is the first stage of the enhanced weather processing pipeline.
+Weather Data Fetch DAG - Fetches weather data from Open-Meteo API.
 """
+from airflow import DAG
+from config.dag_config import COMMON_DAG_CONFIG
+from utils.task_utils import create_script_task, create_trigger_task
 
-from airflow.decorators import dag
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-from airflow.operators.bash import BashOperator
-from datetime import datetime
-import os
-from typing import Dict
-
-
-@dag(
+dag = DAG(
     dag_id="fetch_weather_dag",
-    start_date=datetime(2024, 1, 1),
-    schedule=None,
-    catchup=False,
-    doc_md=__doc__,
-    default_args={"owner": "nutriweather", "retries": 3},
-    tags=["weather", "fetch", "raw"],
-    max_active_runs=1,
+    description="Fetch weather data from Open-Meteo API",
+    tags=["fetch", "weather", "raw"],
+    **COMMON_DAG_CONFIG
 )
-def fetch_weather_dag():    # Run the fetch_weather script with auto-dependency installation
-    extract_weather_task = BashOperator(
-        task_id="extract_weather_from_api",
-        bash_command="cd /usr/local/airflow && python include/scripts/fetch_weather.py",
-        cwd="/usr/local/airflow",
-    )
-    
-    trigger_formatting = TriggerDagRunOperator(
-        task_id="trigger_formatting",
-        trigger_dag_id="format_weather_dag",
-        wait_for_completion=False,
-        conf={"triggered_by": "fetch_weather_dag"}
-    )
-    
-    extract_weather_task >> trigger_formatting
 
+# Tasks
+fetch_task = create_script_task(
+    task_id="fetch_weather_data",
+    script_name="fetch_weather.py",
+    dag=dag
+)
 
-fetch_weather_dag()
+trigger_task = create_trigger_task(
+    task_id="trigger_format_weather",
+    target_dag_id="format_weather_dag",
+    dag=dag
+)
+
+# Dependencies
+fetch_task >> trigger_task

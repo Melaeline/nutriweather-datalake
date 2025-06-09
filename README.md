@@ -116,7 +116,7 @@ nutriweather-datalake/
    ```
 
 3. **Configure Airflow**
-   - Set `AIRFLOW_HOME` to the project directory or desired location.
+   - Set `AIRFLOW_HOME` to the absolute path of the project directory or desired location.
    - Point Airflow to the `dags/` directory:
      ```bash
      export AIRFLOW_HOME=$(pwd)
