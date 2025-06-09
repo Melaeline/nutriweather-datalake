@@ -35,7 +35,8 @@ A comprehensive data engineering project that combines weather data with meal re
 - **pandas 1.5.0+** - Data manipulation and analysis
 - **pyarrow 10.0.0+** - Columnar data format support
 - **numpy 1.26.0+** - Numerical computing
-- **requests 2.31.0+** - HTTP client library
+- **requests 2.31.0+ (< 2.33.0)** - HTTP client library (version-pinned for urllib3 compatibility)
+- **urllib3 1.26.0+ (< 2.3.0)** - HTTP library (compatible with requests)
 
 ### API Integration
 - **openmeteo-requests 1.1.0+** - Weather API client
@@ -97,10 +98,16 @@ format_weather.py → /include/formatted/weather/formatted_weather_YYYYMMDD_HHMM
   - Preparation time estimation algorithm
   - Instruction cleaning and formatting
   - Category and region standardization
+  - Clean single-file Parquet output (no Spark artifacts)
 - **Weather Processing**:
   - Location name enrichment via reverse geocoding
   - Timestamp standardization (ISO 8601)
   - Data validation and type conversion
+
+**File Architecture:**
+- **Clean Output**: Single parquet files without `_SUCCESS` or partition artifacts
+- **Temporary Processing**: Spark artifacts handled internally and cleaned up
+- **Consistent Naming**: `formatted_meals_YYYYMMDD_HHMMSS.parquet` format
 
 ### Stage 3: Data Integration (Usage Layer)
 ```
@@ -342,6 +349,11 @@ GET nutriweather_temperature/_search
 
 ## 🚨 Error Handling & Recovery
 
+### Dependency Management
+- **Version Compatibility**: Fixed urllib3/requests compatibility issues
+- **Pinned Versions**: Critical dependencies pinned to prevent breaking changes
+- **Container Isolation**: Dependencies managed within Docker containers
+
 ### Retry Mechanisms
 - **Airflow Tasks**: 2 retries with 5-minute delays
 - **API Requests**: Exponential backoff with retry-requests
@@ -441,4 +453,3 @@ ELASTICSEARCH_HOSTS: http://es01:9200
 **Project Maintainer**: NutriWeather Team  
 **Last Updated**: December 2024  
 **License**: MIT License
-```

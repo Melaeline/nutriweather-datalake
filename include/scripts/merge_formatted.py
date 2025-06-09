@@ -20,7 +20,14 @@ def load_latest_meals():
     if not files:
         return []
     
-    latest_file = max(files, key=os.path.getctime)
+    # Filter out any directories or artifacts, get only .parquet files
+    parquet_files = [f for f in files if os.path.isfile(f) and f.endswith('.parquet')]
+    
+    if not parquet_files:
+        return []
+    
+    latest_file = max(parquet_files, key=os.path.getctime)
+    print(f"Loading meals from: {latest_file}")
     df = pd.read_parquet(latest_file)
     return df.to_dict('records')
 

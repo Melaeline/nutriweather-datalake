@@ -5,7 +5,7 @@ Simplified Meals Data Formatting Module
 import glob
 import os
 from datetime import datetime
-from spark_utils import get_spark_session, ensure_directory, add_metadata_columns
+from spark_utils import get_spark_session, ensure_directory, add_metadata_columns, save_parquet_clean
 from pyspark.sql.functions import col, explode, udf, array, when, concat_ws, array_join
 from pyspark.sql.types import IntegerType, StringType
 
@@ -87,14 +87,11 @@ def main():
         # Add metadata
         final_df = add_metadata_columns(formatted_df)
         
-        # Save as Parquet
+        # Save as clean Parquet file
         output_dir = "/usr/local/airflow/include/formatted/meals"
         ensure_directory(output_dir)
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = f"{output_dir}/formatted_meals_{timestamp}.parquet"
-        
-        final_df.coalesce(1).write.mode("overwrite").parquet(output_path)
+        output_path = save_parquet_clean(final_df, output_dir, "formatted_meals")
         
         print(f"Formatted meals saved to: {output_path}")
         print(f"Total meals formatted: {final_df.count()}")
