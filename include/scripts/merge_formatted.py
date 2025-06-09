@@ -12,6 +12,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import traceback
 import hashlib
+import random
 
 
 def get_latest_file(directory, pattern):
@@ -47,6 +48,18 @@ def load_latest_weather_data():
     except Exception as e:
         print(f"Error loading weather data: {e}")
         return {}
+
+
+def load_advice_data():
+    """Load advice data from CSV file."""
+    advice_file = "/usr/local/airflow/include/advice_dataset.csv"
+    try:
+        # Read CSV with semicolon separator
+        df = pd.read_csv(advice_file, sep=';')
+        return df.to_dict('records')
+    except Exception as e:
+        print(f"Error loading advice data: {e}")
+        return []
 
 
 def generate_temperature_records(weather_data):
@@ -91,6 +104,44 @@ def get_meal_advice(temperature):
         return "Hot weather calls for cold dishes and minimal cooking. Stay refreshed!"
 
 
+def get_random_advice(advice_data, temperature):
+    """Get random advice based on temperature with some randomness."""
+    if not advice_data:
+        return get_meal_advice(temperature)  # Fallback to old method
+    
+    # Filter advice within temperature range (±3 degrees for variety)
+    temp_range = 3
+    suitable_advice = [
+        advice for advice in advice_data 
+        if abs(advice['temperature'] - temperature) <= temp_range
+    ]
+    
+    # If no suitable advice found, expand the range
+    if not suitable_advice:
+        temp_range = 6
+        suitable_advice = [
+            advice for advice in advice_data 
+            if abs(advice['temperature'] - temperature) <= temp_range
+        ]
+    
+    # If still no advice, use all advice
+    if not suitable_advice:
+        suitable_advice = advice_data
+    
+    # Add some randomness - occasionally pick from broader temperature range
+    if random.random() < 0.2:  # 20% chance for more variety
+        broader_range = 8
+        broader_advice = [
+            advice for advice in advice_data 
+            if abs(advice['temperature'] - temperature) <= broader_range
+        ]
+        if broader_advice:
+            suitable_advice = broader_advice
+    
+    # Randomly select from suitable advice
+    return random.choice(suitable_advice)['advice']
+
+
 def get_temperature_category(temperature):
     """Categorize temperature for meal selection."""
     if temperature < 10:
@@ -104,39 +155,49 @@ def get_temperature_category(temperature):
 
 
 def select_recommended_meal(meals_data, temperature, date_str):
-    """Select a meal recommendation deterministically based on temperature and date."""
+    """Select a meal recommendation with randomness based on temperature and date."""
     if not meals_data:
         return None
     
     # Get temperature category
     temp_category = get_temperature_category(temperature)
     
-    # Filter meals based on temperature preference
+    # Filter meals based on temperature preference with some flexibility
     if temp_category == "cold":
-        # Cold weather - prefer hot meals (lower temperature meals)
-        preferred = [m for m in meals_data if m.get('temperature', 15) <= 15]
+        # Cold weather - prefer hot meals but allow some variety
+        preferred = [m for m in meals_data if m.get('temperature', 15) <= 18]
+        if random.random() < 0.3:  # 30% chance for variety
+            preferred.extend([m for m in meals_data if 18 < m.get('temperature', 15) <= 22])
     elif temp_category == "hot":
-        # Hot weather - prefer cold meals (higher temperature meals)
-        preferred = [m for m in meals_data if m.get('temperature', 15) >= 20]
+        # Hot weather - prefer cold meals but allow some variety
+        preferred = [m for m in meals_data if m.get('temperature', 15) >= 18]
+        if random.random() < 0.3:  # 30% chance for variety
+            preferred.extend([m for m in meals_data if 14 <= m.get('temperature', 15) < 18])
     else:
-        # Moderate/warm weather - prefer moderate temperature meals
-        preferred = [m for m in meals_data if 15 <= m.get('temperature', 15) <= 25]
+        # Moderate/warm weather - prefer moderate temperature meals with variety
+        preferred = [m for m in meals_data if 12 <= m.get('temperature', 15) <= 28]
+        if random.random() < 0.4:  # 40% chance for more variety
+            preferred = meals_data
     
     # If no preferred meals found, use all meals
     if not preferred:
         preferred = meals_data
     
-    # Create deterministic selection using hash of date and temperature
+    # Add randomness while maintaining some consistency for the same day
+    # Use date as partial seed but add random component
     selection_seed = f"{date_str}_{temp_category}_{int(temperature)}"
     hash_value = int(hashlib.md5(selection_seed.encode()).hexdigest(), 16)
     
-    # Select meal based on hash
-    selected_index = hash_value % len(preferred)
+    # Combine hash-based selection with randomness
+    base_index = hash_value % len(preferred)
+    random_offset = random.randint(-2, 2)  # Small random offset
+    selected_index = (base_index + random_offset) % len(preferred)
+    
     return preferred[selected_index]
 
 
-def generate_enhanced_records(weather_data, meals_data):
-    """Generate enhanced records with meal recommendations."""
+def generate_enhanced_records(weather_data, meals_data, advice_data):
+    """Generate enhanced records with meal recommendations and advice."""
     records = []
     
     if not weather_data.get('current'):
@@ -159,8 +220,11 @@ def generate_enhanced_records(weather_data, meals_data):
     current_time = current.get('time', datetime.now().isoformat())
     date_str = current_time.split('T')[0] if 'T' in current_time else current_time.split(' ')[0]
     
-    # Select recommended meal deterministically
+    # Select recommended meal with randomness
     recommended_meal = select_recommended_meal(meals_data, current_temp, date_str)
+    
+    # Get random advice based on temperature
+    temperature_advice = get_random_advice(advice_data, current_temp)
     
     # Create enhanced record
     record = {
@@ -172,7 +236,7 @@ def generate_enhanced_records(weather_data, meals_data):
         "location": location.get('name', 'Unknown'),
         "latitude": location.get('coordinates', {}).get('latitude'),
         "longitude": location.get('coordinates', {}).get('longitude'),
-        "recommended_advice": get_meal_advice(current_temp),
+        "recommended_advice": temperature_advice,
         "temperature_category": get_temperature_category(current_temp)
     }
     
@@ -235,13 +299,15 @@ def main():
         # Load data
         meals_data = load_latest_meals_data()
         weather_data = load_latest_weather_data()
+        advice_data = load_advice_data()
         
         print(f"Loaded {len(meals_data)} meals")
+        print(f"Loaded {len(advice_data)} advice entries")
         print(f"Weather data available: {bool(weather_data)}")
         
         # Generate records
         temperature_records = generate_temperature_records(weather_data)
-        enhanced_records = generate_enhanced_records(weather_data, meals_data)
+        enhanced_records = generate_enhanced_records(weather_data, meals_data, advice_data)
         
         # Save records
         temp_file, enhanced_file = save_elasticsearch_records(temperature_records, enhanced_records)
