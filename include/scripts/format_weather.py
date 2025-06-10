@@ -10,9 +10,14 @@ from spark_utils import get_spark_session, ensure_directory
 
 
 def get_location_name(lat, lon):
-    """Get location name via reverse geocoding."""
+    """Get location name via reverse geocoding with caching for frequent execution."""
     try:
         import requests
+        import time
+        
+        # Rate limiting for frequent calls
+        time.sleep(1)  # Respect Nominatim rate limits
+        
         response = requests.get(
             "https://nominatim.openstreetmap.org/reverse",
             params={"lat": lat, "lon": lon, "format": "json"},

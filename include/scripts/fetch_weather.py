@@ -8,6 +8,7 @@ import json
 import os
 from datetime import datetime
 from spark_utils import get_spark_session, ensure_directory
+import time
 
 
 def fetch_weather_data():
@@ -90,7 +91,19 @@ def main():
     spark = get_spark_session("FetchWeather")
     
     try:
-        print("Fetching weather data from Open-Meteo...")
+        print("Fetching weather data from Open-Meteo (scheduled execution)...")
+        
+        # Check if we have recent data (within last 2 minutes) to avoid unnecessary API calls
+        output_dir = "/usr/local/airflow/include/raw/weather"
+        if os.path.exists(output_dir):
+            import glob
+            existing_files = glob.glob(os.path.join(output_dir, "raw_weather_*.json"))
+            if existing_files:
+                latest_file = max(existing_files, key=os.path.getctime)
+                file_age = time.time() - os.path.getctime(latest_file)
+                if file_age < 120:  # Less than 2 minutes old
+                    print(f"Recent weather data exists ({file_age:.0f}s old), skipping API call")
+                    return
         
         # Fetch and process weather data
         response = fetch_weather_data()

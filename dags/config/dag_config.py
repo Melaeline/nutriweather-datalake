@@ -17,9 +17,18 @@ DEFAULT_DAG_ARGS = {
 # Common DAG configuration
 COMMON_DAG_CONFIG = {
     "start_date": datetime(2024, 1, 1),
-    "schedule": None,
+    "schedule": None,  # Default to manual execution
     "catchup": False,
     "max_active_runs": 1,
+    "default_args": DEFAULT_DAG_ARGS,
+}
+
+# Scheduled DAG configuration (for pipeline automation)
+SCHEDULED_DAG_CONFIG = {
+    "start_date": datetime(2024, 1, 1),
+    "schedule": "*/1 * * * *",  # Every minute
+    "catchup": False,
+    "max_active_runs": 1,  # Prevent overlapping runs
     "default_args": DEFAULT_DAG_ARGS,
 }
 

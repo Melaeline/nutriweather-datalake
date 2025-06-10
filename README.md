@@ -2,12 +2,15 @@
 
 A comprehensive data engineering project that combines weather data with meal recommendations using Apache Airflow, Apache Spark, Elasticsearch, and HDFS. This pipeline fetches real-time weather data and meal information, processes them through multiple stages, and provides intelligent meal recommendations based on current weather conditions.
 
+**🕐 Scheduling**: The pipeline runs automatically every minute to provide continuous, real-time data updates.
+
 ## 🏗️ Architecture Overview
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Data Sources  │    │   Processing    │    │    Storage &    │
 │                 │    │    Pipeline     │    │  Visualization  │
+│                 │    │  (Every Minute) │    │                 │
 ├─────────────────┤    ├─────────────────┤    ├─────────────────┤
 │ Open-Meteo API │────▶│ Apache Airflow  │────▶│ HDFS Cluster    │
 │ TheMealDB API   │    │ Apache Spark    │    │ Elasticsearch   │
@@ -77,107 +80,74 @@ A comprehensive data engineering project that combines weather data with meal re
 - **Usage**: Convert coordinates to human-readable locations
 - **Rate Limits**: 1 request per second (implemented with delays)
 
-## 📊 Data Pipeline Flow with HDFS Integration
+## 📊 Data Pipeline Flow with Continuous Updates
 
-### Stage 1: Data Ingestion (Raw Layer)
+### Real-time Data Processing (Every Minute)
 ```
-fetch_meals_data() → /include/raw/meals/raw_meals_YYYYMMDD_HHMMSS.json
-                  → HDFS: /nutriweather/raw/ (automatic backup)
-fetch_weather_data() → /include/raw/weather/raw_weather_YYYYMMDD_HHMMSS.json
-                    → HDFS: /nutriweather/raw/ (automatic backup)
-```
-
-**Raw Data Structures:**
-- **Meals**: Complete TheMealDB API response with 50+ fields per meal
-- **Weather**: Structured JSON with metadata, current, hourly, and daily sections
-- **Retention**: All raw files preserved locally and in HDFS for reprocessing
-- **HDFS Storage**: Distributed storage with 2x replication for fault tolerance
-- **Automatic Backup**: Every raw file is automatically backed up to HDFS upon creation using `save_with_hdfs_backup()`
-
-### Stage 2: Data Transformation (Formatted Layer)
-```
-format_meals.py → /include/formatted/meals/formatted_meals_YYYYMMDD_HHMMSS.parquet
-              → HDFS: /nutriweather/formatted/ (automatic backup)
-format_weather.py → /include/formatted/weather/formatted_weather_YYYYMMDD_HHMMSS.json
-                 → HDFS: /nutriweather/formatted/ (automatic backup)
+Minute 1: fetch_weather → format_weather → merge → index_elasticsearch
+Minute 2: fetch_weather → format_weather → merge → index_elasticsearch
+Minute 3: fetch_weather → format_weather → merge → index_elasticsearch
+...continuous execution...
 ```
 
-**Transformations Applied:**
-- **Meals Processing**:
-  - Ingredient consolidation (20 ingredient fields → single array)
-  - Preparation time estimation algorithm
-  - Instruction cleaning and formatting
-  - Category and region standardization
-  - Clean single-file Parquet output (no Spark artifacts)
-  - **HDFS Integration**: Automatic backup via `save_parquet_clean()` function
-- **Weather Processing**:
-  - Location name enrichment via reverse geocoding
-  - Timestamp standardization (ISO 8601)
-  - Data validation and type conversion
-  - **HDFS Archival**: Automatic backup via `save_with_hdfs_backup()` function
+### Optimized Execution Strategy
+- **Weather Data**: Fresh API calls with intelligent caching
+- **Meal Data**: Consider reducing frequency to hourly for full dataset refresh
+- **Processing**: Incremental updates where possible
+- **Storage**: Efficient file management with automatic cleanup options
 
-**File Architecture:**
-- **Local Output**: Single parquet files without `_SUCCESS` or partition artifacts
-- **HDFS Mirror**: Distributed copies for high availability via unified backup functions
-- **Consistent Naming**: `formatted_meals_YYYYMMDD_HHMMSS.parquet` format
-- **Cross-Platform Access**: Available via local filesystem and HDFS API
-- **Automatic Replication**: HDFS ensures 2x replication across DataNodes
-- **Universal Backup**: All files backed up using standardized `spark_utils` functions
+## 🚀 DAG Execution & Orchestration
 
-### Stage 3: Data Integration (Usage Layer)
-```
-merge_formatted.py → /include/usage/temperature_timeseries_YYYYMMDD_HHMMSS.jsonl
-                  → /include/usage/enhanced_recommendations_YYYYMMDD_HHMMSS.jsonl
-                  → HDFS: /nutriweather/usage/ (automatic backup for both files)
-```
+### Primary DAG: `start_pipeline_dag`
+**Trigger**: Automatic execution every minute
+**Schedule**: `*/1 * * * *` (CRON expression for every minute)
+**Max Active Runs**: 1 (prevents concurrent executions)
 
-**Output Formats:**
-1. **Temperature Time Series** (JSONL):
-   ```json
-   {
-     "@timestamp": "2024-12-19 15:30:00",
-     "temperature": 18.5,
-     "location": "Paris, France",
-     "latitude": 48.8534,
-     "longitude": 2.3488
-   }
-   ```
+#### Scheduling Benefits
+- **Real-time Updates**: Fresh weather data every minute
+- **Continuous Monitoring**: Constant data availability for dashboards
+- **Fault Tolerance**: Automatic recovery from transient failures
+- **Rate Limiting**: Built-in protections for API endpoints
 
-2. **Enhanced Recommendations** (JSONL):
-   ```json
-   {
-     "@timestamp": "2024-12-19 15:30:00",
-     "current_temperature": 18.5,
-     "temperature_category": "moderate",
-     "suggested_meal": "Beef Bourguignon",
-     "preparation_time": "45 minutes",
-     "recommended_advice": "Great weather for hearty meals!",
-     "location": "Paris, France"
-   }
-   ```
+#### Performance Optimizations for Frequent Execution
+- **Smart Caching**: Weather data cached for 2 minutes to reduce API calls
+- **Rate Limiting**: Respectful delays between external API requests
+- **Duplicate Detection**: Elasticsearch indexing handles duplicate data gracefully
+- **Resource Management**: Single active run prevents resource conflicts
 
-**HDFS Backup Strategy:**
-- **Real-time Backup**: Every file is automatically backed up to HDFS immediately after creation
-- **Unified Functions**: All scripts use standardized `save_with_hdfs_backup()` and `backup_to_hdfs()` functions
-- **Intelligent Routing**: HDFS paths determined automatically based on local file structure
-- **Error Resilience**: Pipeline continues even if HDFS backup fails (graceful degradation)
+#### Task Details (Optimized for Minute-by-Minute Execution)
+1. **fetch_meals_data** (Python Task)
+   - Runtime: ~2-3 minutes
+   - **Optimization**: Rate limiting between API calls (0.1s delay)
+   - **Consideration**: Full dataset fetch may not be needed every minute
+   - **HDFS**: Automatic backup to `/nutriweather/raw/meals/`
 
-### Stage 4: Data Indexing (Elasticsearch)
-```
-index_elasticsearch.py → Elasticsearch indices:
-                       → nutriweather_temperature
-                       → nutriweather_enhanced
-                       → HDFS: /nutriweather/indexed/ (metadata backup)
-```
+2. **fetch_weather_data** (Bash → Python Script)
+   - Runtime: ~10-15 seconds
+   - **Optimization**: Skips API call if data is less than 2 minutes old
+   - **Rate Limiting**: Respects Open-Meteo free tier limits
+   - **HDFS**: Automatic backup to `/nutriweather/raw/weather/`
 
-**Complete HDFS Integration:**
-- **100% Coverage**: All raw, formatted, and usage files automatically backed up
-- **No Manual Steps**: Backup happens transparently during normal pipeline execution
-- **Fault Tolerance**: HDFS client with multiple connection fallback methods
-- **Cross-Platform**: Works with hdfs library, WebHDFS, and pure requests fallback
-- **Disaster Recovery**: Complete pipeline can be restored from HDFS if local storage fails
+3. **format_meals_data** (Spark Job)
+   - Runtime: ~30-45 seconds
+   - **Optimization**: Efficient processing of latest data only
+   - **HDFS**: Parquet files backed up to `/nutriweather/formatted/meals/`
 
-## 🗂️ File Formats & Data Organization
+4. **format_weather_data** (Python Script)
+   - Runtime: ~5-10 seconds
+   - **Optimization**: 1-second delay for Nominatim API respect
+   - **HDFS**: Enhanced JSON backed up to `/nutriweather/formatted/weather/`
+
+5. **merge_formatted_data** (Spark + Python)
+   - Runtime: ~15-20 seconds
+   - **Optimization**: Processes latest data efficiently
+   - **HDFS**: Both outputs backed up to respective directories
+
+6. **trigger_elasticsearch_indexing** (TriggerDAG)
+   - **Optimization**: Duplicate detection prevents index bloat
+   - **Performance**: Bulk indexing with smart batching
+
+## 📂 File Formats & Data Organization
 
 ### Directory Structure
 ```
@@ -219,98 +189,145 @@ HDFS Storage (/nutriweather/):
 - **Formatted Weather → JSON**: Maintains nested structure for complex weather data
 - **Usage → JSONL**: Elasticsearch bulk indexing compatibility
 
-## 🚀 DAG Execution & Orchestration
+## 🚨 Error Handling & Recovery for Continuous Operation
 
-### Primary DAG: `start_pipeline_dag`
-**Trigger**: Manual execution or API call
-**Schedule**: On-demand (no automatic scheduling)
-**Max Active Runs**: 1 (prevents concurrent executions)
+### Retry Mechanisms (Enhanced for Frequent Execution)
+- **Airflow Tasks**: 2 retries with 5-minute delays
+- **API Requests**: Exponential backoff with retry-requests
+- **Rate Limiting**: Smart delays to respect API limits
+- **Resource Management**: Single active run prevents conflicts
 
-#### Task Dependencies
-```mermaid
-graph TD
-    A[fetch_meals_data] --> C[format_meals_data]
-    B[fetch_weather_data] --> D[format_weather_data]
-    C --> E[merge_formatted_data]
-    D --> E
-    E --> F[trigger_elasticsearch_indexing]
-```
+### Monitoring for Continuous Operation
+- **Task Duration Tracking**: Monitor for performance degradation
+- **API Rate Limit Monitoring**: Track API usage patterns
+- **Storage Growth**: Monitor disk usage with continuous data generation
+- **HDFS Health**: Continuous backup verification
 
-#### Task Details
-1. **fetch_meals_data** (Python Task)
-   - Runtime: ~2-3 minutes
-   - Memory usage: ~200MB
-   - Output: ~1000 meals in JSON format
-   - **HDFS**: Automatic backup to `/nutriweather/raw/meals/`
+## 🔮 Future Enhancements for Continuous Operation
 
-2. **fetch_weather_data** (Bash → Python Script)
-   - Runtime: ~10-15 seconds
-   - API calls: 1 request to Open-Meteo
-   - Output: Current + 24h forecast data
-   - **HDFS**: Automatic backup to `/nutriweather/raw/weather/`
+### Planned Optimizations
+- **Incremental Processing**: Process only changed data
+- **Smart Caching**: Redis-based caching for frequently accessed data
+- **Dynamic Scheduling**: Adjust frequency based on data change patterns
+- **Resource Optimization**: Auto-scaling based on execution patterns
 
-3. **format_meals_data** (Spark Job)
-   - Runtime: ~30-45 seconds
-   - Spark cluster: 1 master + 1 worker (2GB memory)
-   - Operations: DataFrame transformations, UDF applications
-   - **HDFS**: Parquet files backed up to `/nutriweather/formatted/meals/`
+### Performance Monitoring
+- **Execution Time Trends**: Track pipeline performance over time
+- **Resource Usage**: Monitor CPU, memory, and storage patterns
+- **API Usage Analytics**: Optimize API call patterns
+- **Data Quality Metrics**: Continuous validation of incoming data
 
-4. **format_weather_data** (Python Script)
-   - Runtime: ~5-10 seconds
-   - External API: Nominatim reverse geocoding
-   - Enhancement: Location name resolution
-   - **HDFS**: Enhanced JSON backed up to `/nutriweather/formatted/weather/`
+## ⚠️ Important Considerations for Minute-by-Minute Execution
 
-5. **merge_formatted_data** (Spark + Python)
-   - Runtime: ~15-20 seconds
-   - Logic: Weather-meal recommendation matching
-   - Output: Two JSONL files for different use cases
-   - **HDFS**: Both outputs backed up to respective directories
+### API Rate Limits
+- **Open-Meteo**: Free tier, monitor usage patterns
+- **TheMealDB**: Consider caching strategy for full dataset
+- **Nominatim**: 1 request per second limit enforced
 
-6. **trigger_elasticsearch_indexing** (TriggerDAG)
-   - Triggers: `index_elasticsearch_dag`
-   - Wait for completion: True
-   - Bulk indexing: Both temperature and enhanced datasets
+### Storage Management
+- **Rapid Data Growth**: ~1440 executions per day
+- **Cleanup Strategy**: Consider automated file retention policies
+- **HDFS Capacity**: Monitor storage usage trends
 
-### Secondary DAG: `index_elasticsearch_dag`
-**Purpose**: Elasticsearch data indexing
-**Trigger**: Called by primary DAG
-**Features**: 
-- Index creation with optimized mappings
-- Bulk document indexing
-- Error handling and retry logic
+### Resource Usage
+- **CPU Load**: Continuous Spark job execution
+- **Memory Usage**: Multiple concurrent processes
+- **Network Bandwidth**: Frequent API calls and data transfers
 
-## 🐳 Docker Environment Setup
+## 🔧 Configuration for Scheduled Execution
 
-### Container Architecture
+### Environment Variables
 ```yaml
-Services:
-├── Airflow Scheduler     # DAG scheduling and monitoring
-├── Airflow Webserver     # Web UI (localhost:8080)
-├── Airflow Worker        # Task execution
-├── PostgreSQL           # Airflow metadata storage
-├── Elasticsearch        # Search and analytics (localhost:9200)
-├── Kibana              # Visualization dashboard (localhost:5601)
-├── Spark Master        # Cluster coordination (localhost:8082)
-├── Spark Worker        # Distributed computing (2GB memory)
-├── HDFS NameNode       # HDFS metadata management (localhost:9870)
-├── HDFS DataNode 1     # Distributed storage node 1
-└── HDFS DataNode 2     # Distributed storage node 2
+# Airflow Configuration
+AIRFLOW_UID: 50000
+AIRFLOW_HOME: /usr/local/airflow
+
+# Scheduling Configuration
+PIPELINE_SCHEDULE: "*/1 * * * *"  # Every minute
+MAX_ACTIVE_RUNS: 1
+CATCHUP: false
+
+# Spark Configuration
+SPARK_MASTER_URL: spark://spark-master:7077
+SPARK_WORKER_MEMORY: 2G
+
+# Elasticsearch Configuration
+ELASTICSEARCH_HOSTS: http://es01:9200
+
+# HDFS Configuration
+HDFS_NAMENODE_URL: http://namenode:9870
+HDFS_NAMENODE_API: hdfs://namenode:8020
 ```
 
-### Volume Mappings
-- **Airflow**: `/usr/local/airflow/include` → Local `./include`
-- **Spark**: `/opt/spark-apps` → Local `./apps`
-- **Elasticsearch**: Persistent data volumes for index storage
-- **HDFS NameNode**: `namenode-data` volume for metadata
-- **HDFS DataNodes**: `datanode1-data`, `datanode2-data` volumes for block storage
-- **HDFS Config**: `./hdfs_config` → Container `/opt/hadoop/etc/hadoop`
+## 🚀 Quick Start
 
-### Network Configuration
-- **Internal Network**: `airflow` (Docker Compose network)
-- **Service Discovery**: Container name-based DNS resolution
-- **Port Exposure**: Web interfaces and APIs exposed to host
-- **HDFS Access**: NameNode API (8020) and Web UI (9870) available externally
+### Local Development Setup
+1. **Clone the Repository**:
+   ```bash
+   git clone <repository-url>
+   cd nutriweather-datalake
+   ```
+
+2. **Create HDFS Configuration Directory**:
+   ```bash
+   mkdir -p hdfs_config scripts
+   ```
+
+3. **Start All Services (Including HDFS Cluster)**:
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Monitor Logs (Including HDFS Services)**:
+   ```bash
+   docker-compose logs -f
+   ```
+
+5. **Access Services**:
+   - Airflow: http://localhost:8080 (admin/admin)
+   - Kibana: http://localhost:5601
+   - Spark UI: http://localhost:8082
+   - Elasticsearch: http://localhost:9200
+   - HDFS Web UI: http://localhost:9870
+
+### Astro CLI Integration
+```bash
+# Install Astro CLI
+curl -sSL install.astronomer.io | sudo bash
+
+# Initialize Airflow project
+astro dev init
+
+# Start development environment
+astro dev start
+
+# Deploy to production
+astro deploy
+```
+
+## 📈 Monitoring & Observability
+
+### Airflow Monitoring
+- **Web UI**: Task status, logs, execution history
+- **Metrics**: Task duration, success rate, resource usage
+- **Alerting**: Email notifications on failure (configurable)
+
+### Spark Monitoring
+- **Spark UI**: Job execution, stage details, executor status
+- **Metrics**: Memory usage, task distribution, shuffle operations
+- **Logs**: Driver and executor logs via Docker
+
+### Elasticsearch Health
+- **Cluster Health**: `GET /_cluster/health`
+- **Index Statistics**: `GET /_stats`
+- **Document Counts**: Real-time via Kibana dashboards
+
+### HDFS Cluster Health
+- **NameNode Web UI**: `http://localhost:9870` - Cluster overview, DataNode status
+- **Filesystem Health**: `GET /webhdfs/v1/?op=GETFILESTATUS`
+- **Block Reports**: DataNode health and storage utilization
+- **Replication Status**: File replication factor and under-replicated blocks
+- **Backup Monitoring**: Verify all pipeline files are backed up correctly
 
 ## 🔧 Development Setup
 
@@ -357,30 +374,6 @@ astro dev start
 # Deploy to production
 astro deploy
 ```
-
-## 📈 Monitoring & Observability
-
-### Airflow Monitoring
-- **Web UI**: Task status, logs, execution history
-- **Metrics**: Task duration, success rate, resource usage
-- **Alerting**: Email notifications on failure (configurable)
-
-### Spark Monitoring
-- **Spark UI**: Job execution, stage details, executor status
-- **Metrics**: Memory usage, task distribution, shuffle operations
-- **Logs**: Driver and executor logs via Docker
-
-### Elasticsearch Health
-- **Cluster Health**: `GET /_cluster/health`
-- **Index Statistics**: `GET /_stats`
-- **Document Counts**: Real-time via Kibana dashboards
-
-### HDFS Cluster Health
-- **NameNode Web UI**: `http://localhost:9870` - Cluster overview, DataNode status
-- **Filesystem Health**: `GET /webhdfs/v1/?op=GETFILESTATUS`
-- **Block Reports**: DataNode health and storage utilization
-- **Replication Status**: File replication factor and under-replicated blocks
-- **Backup Monitoring**: Verify all pipeline files are backed up correctly
 
 ## 🔧 HDFS Integration Examples
 
@@ -478,6 +471,11 @@ client.download(f'/nutriweather/formatted/meals/{latest_meals}', '/local/recover
 AIRFLOW_UID: 50000
 AIRFLOW_HOME: /usr/local/airflow
 
+# Scheduling Configuration
+PIPELINE_SCHEDULE: "*/1 * * * *"  # Every minute
+MAX_ACTIVE_RUNS: 1
+CATCHUP: false
+
 # Spark Configuration
 SPARK_MASTER_URL: spark://spark-master:7077
 SPARK_WORKER_MEMORY: 2G
@@ -489,33 +487,3 @@ ELASTICSEARCH_HOSTS: http://es01:9200
 HDFS_NAMENODE_URL: http://namenode:9870
 HDFS_NAMENODE_API: hdfs://namenode:8020
 ```
-
-### Connection Management
-- **Spark Connection**: `spark://spark-master:7077`
-- **Elasticsearch Connection**: `http://es01:9200`
-- **HDFS Connection**: `http://namenode:9870` (Web API) / `hdfs://namenode:8020` (Hadoop API)
-- **External APIs**: No authentication required (free tiers)
-
-## 🔮 Future Enhancements
-
-### Planned Features
-- **Machine Learning Integration**: Scikit-learn meal preference models
-- **Real-time Streaming**: Apache Kafka for live weather updates
-- **Geographic Expansion**: Multi-city weather and regional cuisine
-- **Mobile API**: REST API for mobile application integration
-- **HDFS Analytics**: Historical trend analysis on distributed data
-- **Cross-Region HDFS**: Multi-region HDFS clusters for global data distribution
-
-### Scalability Improvements
-- **Spark Cluster Expansion**: Multi-worker Spark setup
-- **Elasticsearch Clustering**: Multi-node ES cluster
-- **Airflow Scaling**: Kubernetes deployment with auto-scaling
-- **Data Partitioning**: Date-based partitioning for large datasets
-- **HDFS Scaling**: Additional DataNodes for increased storage capacity
-- **HDFS Federation**: Multiple NameNodes for namespace scaling
-
-### Advanced HDFS Features
-- **HDFS Snapshots**: Point-in-time data recovery
-- **HDFS Encryption**: Data at rest encryption for sensitive information
-- **HDFS Quotas**: Storage quota management for different data types
-- **Cross-Cluster Replication**: Disaster recovery across data centers

@@ -1,27 +1,29 @@
 """
 MealDB Data Fetch DAG - Fetches all meals from TheMealDB API.
+Note: This DAG fetches the complete dataset each time. Consider caching for frequent execution.
 """
 
 from airflow import DAG
 from airflow.decorators import task
-from config.dag_config import COMMON_DAG_CONFIG, MEALDB_BASE_URL, RAW_DIR, WEATHER_API_TIMEOUT
+from config.dag_config import SCHEDULED_DAG_CONFIG, MEALDB_BASE_URL, RAW_DIR, WEATHER_API_TIMEOUT
 from utils.task_utils import create_trigger_task
 import requests
 import json
 import string
 import os
+import time
 from datetime import datetime
 
 dag = DAG(
     dag_id="fetch_meals_dag",
-    description="Fetch meals data from TheMealDB API",
-    tags=["fetch", "meals", "raw"],
-    **COMMON_DAG_CONFIG
+    description="Fetch meals data from TheMealDB API - with rate limiting for frequent execution",
+    tags=["fetch", "meals", "raw", "scheduled"],
+    **SCHEDULED_DAG_CONFIG
 )
 
 @task(dag=dag)
 def fetch_meals_data() -> str:
-    """Fetch all meals from TheMealDB API with HDFS backup."""
+    """Fetch all meals from TheMealDB API with HDFS backup and rate limiting."""
     all_meals = []
     meal_ids = set()
     
@@ -37,6 +39,9 @@ def fetch_meals_data() -> str:
                 if meal_id and meal_id not in meal_ids:
                     all_meals.append(meal)
                     meal_ids.add(meal_id)
+            
+            # Rate limiting: small delay between requests for frequent execution
+            time.sleep(0.1)
                     
         except requests.RequestException as e:
             print(f"Error fetching meals for letter '{letter}': {e}")

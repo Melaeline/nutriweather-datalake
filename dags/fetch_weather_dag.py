@@ -1,15 +1,16 @@
 """
 Weather Data Fetch DAG - Fetches weather data from Open-Meteo API.
+Can run frequently without API rate limiting issues.
 """
 from airflow import DAG
-from config.dag_config import COMMON_DAG_CONFIG
+from config.dag_config import SCHEDULED_DAG_CONFIG
 from utils.task_utils import create_script_task, create_trigger_task
 
 dag = DAG(
     dag_id="fetch_weather_dag",
-    description="Fetch weather data from Open-Meteo API",
-    tags=["fetch", "weather", "raw"],
-    **COMMON_DAG_CONFIG
+    description="Fetch weather data from Open-Meteo API - supports frequent execution",
+    tags=["fetch", "weather", "raw", "scheduled"],
+    **SCHEDULED_DAG_CONFIG
 )
 
 # Tasks

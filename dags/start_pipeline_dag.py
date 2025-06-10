@@ -1,15 +1,16 @@
 """
 Complete NutriWeather Data Pipeline DAG - Orchestrates the entire data processing pipeline.
+Runs every minute to provide continuous data updates.
 """
 from airflow import DAG
-from config.dag_config import COMMON_DAG_CONFIG
+from config.dag_config import SCHEDULED_DAG_CONFIG
 from utils.task_utils import create_script_task, create_trigger_task
 
 dag = DAG(
     dag_id="start_pipeline_dag",
-    description="Complete NutriWeather data processing pipeline",
-    tags=["pipeline", "complete"],
-    **COMMON_DAG_CONFIG
+    description="Complete NutriWeather data processing pipeline - runs every minute",
+    tags=["pipeline", "complete", "scheduled"],
+    **SCHEDULED_DAG_CONFIG
 )
 
 # Tasks - using consistent script task approach
